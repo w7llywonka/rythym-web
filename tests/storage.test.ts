@@ -55,3 +55,26 @@ test('look settings accept hex colors only and clamp line thickness', () => {
   assert.equal(d.settings.noteStyle, 'Glow');
   assert.ok(d.settings.noteSize <= 32);
 });
+
+test('imported songs never go to the account: their progress stays on this computer', async () => {
+  const { withoutImports, saveImportProgress, withImportProgress } = await import('../src/storage.ts');
+  const d = sanitize(null);
+  d.bests.afterglow = { score: 100, accuracy: 90, combo: 5, grade: 'A', fc: false };
+  d.bests['custom-abc'] = { score: 999, accuracy: 99, combo: 50, grade: 'S', fc: true };
+  d.bests['custom-abc+'] = { score: 500, accuracy: 95, combo: 30, grade: 'S', fc: false };
+  d.recent = [{ id: 'custom-abc', chart: 'Expert' }, { id: 'afterglow', chart: 'Easy' }];
+
+  const server = withoutImports(d);
+  assert.deepEqual(Object.keys(server.bests), ['afterglow']);
+  assert.deepEqual(server.recent.map(e => e.id), ['afterglow']);
+  assert.ok(!JSON.stringify(server).includes('custom-'));
+
+  const store = memory();
+  saveImportProgress(d, store);
+  const back = withImportProgress(server, store);
+  assert.equal(back.bests['custom-abc'].score, 999);
+  assert.equal(back.bests['custom-abc+'].score, 500);
+  assert.deepEqual(back.recent.map(e => e.id).sort(), ['afterglow', 'custom-abc']);
+  // nothing local: unchanged
+  assert.deepEqual(withImportProgress(server, memory()), server);
+});

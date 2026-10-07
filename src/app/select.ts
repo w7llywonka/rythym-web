@@ -11,6 +11,8 @@ import { openSettings } from './settingsPanel.ts';
 import { startRun } from './play.ts';
 import { playPreview } from './preview.ts';
 import { audio } from './services.ts';
+import { loadImportAudio, loadImports, removeImport, saveImport } from './importStore.ts';
+import { queueSave } from './save.ts';
 import { go, onClick, setAmbient, showToast } from './shell.ts';
 import { S, bestKey, chartFor, packOf, setTracks, settings } from './state.ts';
 import { openStyle } from './stylePanel.ts';
@@ -138,6 +140,7 @@ function updateDetail() {
 
   // imports have no online board
   show($('select.detail.best.top'), !t.custom);
+  show($('select.detail.best.remove'), !!t.custom);
   const b = S.data.bests[bestKey(t, chart.diff)];
   txt($('select.detail.best.score'), b ? formatNumber(b.score) : '-');
   txt($('select.detail.best.info'), b ? `${b.accuracy.toFixed(2)}%  ·  ${b.combo} max combo` : 'No clears yet. Go set a score!');
@@ -235,10 +238,41 @@ async function importFile(file: File) {
     S.selectedSong[t.difficulty] = t;
     setTab(t.difficulty);
     selectSong(t);
-    showToast(imported.warning ?? `${t.title} added to ${MODES[t.difficulty].label}`);
+    // keep it on this computer so it's still here next time (nothing is uploaded)
+    let kept = true;
+    try { await saveImport(imported.song, file); } catch { kept = false; }
+    showToast(imported.warning ?? (kept
+      ? `${t.title} added to ${MODES[t.difficulty].label} and saved on this computer`
+      : `${t.title} added to ${MODES[t.difficulty].label} (couldn't save it on this computer, so it's here until you close the tab)`));
   } catch (e) {
     showToast(e instanceof Error ? e.message : "Couldn't import that file.");
   }
+}
+
+/** bring back the songs imported on this computer */
+async function restoreImports() {
+  let saved: Track['song'][] = [];
+  try { saved = await loadImports(); } catch { return; }
+  if (!saved.length) return;
+  const restored = saved.map(song => trackFromImport(song)).filter(t => t.charts[t.difficulty]);
+  setTracks([...S.tracks.filter(t => !restored.some(r => r.id === t.id)), ...restored]);
+  for (const tab of TAB_ORDER) S.selectedSong[tab] ??= songsFor(tab)[0];
+  if (S.screen === 'select') buildList();
+}
+
+async function removeSelectedImport() {
+  const t = S.selectedSong[S.tab];
+  if (!t?.custom || !window.confirm(`Remove "${t.title}" from this computer? Its scores are removed too.`)) return;
+  try { await removeImport(t.id); } catch { /* already gone */ }
+  setTracks(S.tracks.filter(x => x !== t));
+  for (const key of [t.id, `${t.id}+`]) delete S.data.bests[key];
+  S.data.recent = S.data.recent.filter(e => e.id !== t.id);
+  for (const tab of TAB_ORDER) if (S.selectedSong[tab] === t) S.selectedSong[tab] = undefined;
+  queueSave();
+  buildList();
+  const next = S.selectedSong[S.tab];
+  if (S.previewTrack === t && next) void playPreview(next);
+  showToast(`${t.title} removed`);
 }
 
 export function initSelect() {
@@ -274,4 +308,7 @@ export function initSelect() {
   });
 
   for (const tab of TAB_ORDER) S.selectedSong[tab] = songsFor(tab)[0];
+  onClick('select.detail.best.remove', () => void removeSelectedImport());
+  audio.localSource = loadImportAudio;
+  void restoreImports();
 }

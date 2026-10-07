@@ -1,7 +1,7 @@
 // Accounts: log in / sign up, the Account panel (password, log out, delete), and restoring a session.
 import { api, validatePassword, validateUsername, type User } from '../api.ts';
 import { T } from '../config.ts';
-import { load as loadLocal, sanitize } from '../storage.ts';
+import { load as loadLocal, sanitize, withImportProgress, withoutImports } from '../storage.ts';
 import { $, show, txt } from '../ui.ts';
 import { refreshFeed, refreshHome, refreshWeekly } from './home.ts';
 import { playPreview } from './preview.ts';
@@ -78,10 +78,10 @@ async function signedIn(user: User, fresh: boolean) {
   let res = await api.loadSave();
   if (!res.ok && res.status !== 401) res = await api.loadSave(); // one retry on a network blip
   if (res.ok) {
-    if (res.data?.data) S.data = sanitize(res.data.data);
+    if (res.data?.data) S.data = withImportProgress(sanitize(res.data.data));
     else {
-      S.data = loadLocal();
-      await api.putSave(S.data);
+      S.data = withImportProgress(loadLocal());
+      await api.putSave(withoutImports(S.data));
     }
     setAccountLoaded(true, 'Progress is saved to your account');
   } else {
@@ -100,7 +100,7 @@ export function signedOut() {
   S.account = null;
   setAccountLoaded(false);
   vsReset();
-  S.data = loadLocal();
+  S.data = withImportProgress(loadLocal());
   afterDataChange();
 }
 

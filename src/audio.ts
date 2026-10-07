@@ -20,6 +20,8 @@ export class AudioEngine {
   private loopLength = 0;
   playing = false;
   token = 0;
+  /** where imported songs' audio comes from ("local:..." songs, stored on this computer) */
+  localSource: ((id: string) => Promise<ArrayBuffer | null>) | null = null;
 
   async unlock(): Promise<AudioContext> {
     if (!this.ctx) {
@@ -61,6 +63,11 @@ export class AudioEngine {
     let p = this.buffers.get(song.id);
     if (!p) {
       p = this.unlock().then(async ctx => {
+        if (song.audio.startsWith('local:')) {
+          const bytes = await this.localSource?.(song.id);
+          if (!bytes) throw new Error('import audio missing');
+          return ctx.decodeAudioData(bytes);
+        }
         if (!song.audio.startsWith('file:')) return renderSong(song, ctx);
         const res = await fetch(song.audio.slice(5));
         if (!res.ok) throw new Error(`audio ${res.status}`);

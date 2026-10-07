@@ -1,6 +1,6 @@
 // Saving: guests save in this browser (localStorage), logged-in players save to their account.
 import { api } from '../api.ts';
-import { save as saveLocal } from '../storage.ts';
+import { save as saveLocal, saveImportProgress, withoutImports } from '../storage.ts';
 import { signedOut } from './accounts.ts';
 import { game } from './services.ts';
 import { S } from './state.ts';
@@ -21,8 +21,10 @@ export function setAccountLoaded(loaded: boolean, state = '') {
 
 async function flush() {
   timer = undefined;
+  // imported songs' progress always stays on this computer
+  saveImportProgress(S.data);
   if (S.account && accountLoaded) {
-    const res = await api.putSave(S.data);
+    const res = await api.putSave(withoutImports(S.data));
     syncState = res.ok ? 'Progress saved to your account' : `Couldn't sync: ${res.error}`;
     if (res.status === 401) signedOut();
   } else if (!S.account) {
@@ -53,7 +55,8 @@ export function initSave() {
     if (timer) {
       clearTimeout(timer);
       timer = undefined;
-      if (S.account && accountLoaded) beacon('/api/save', { data: S.data });
+      saveImportProgress(S.data);
+      if (S.account && accountLoaded) beacon('/api/save', { data: withoutImports(S.data) });
       else if (!S.account) saveLocal(S.data);
     }
   });

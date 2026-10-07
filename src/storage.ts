@@ -131,3 +131,35 @@ export function save(data: SaveData, storage: Pick<Storage, 'setItem'> | null = 
     return false;
   }
 }
+
+// ---- imported songs stay on this computer ---------------------------------------------------
+// Bests and Recent entries for imported songs ("custom-...") are never sent to the account; they're
+// kept in their own localStorage entry and merged back in.
+export const IMPORT_PROGRESS_KEY = 'lineRush.importProgress';
+export const isImportId = (id: string) => id.startsWith('custom-');
+
+/** the save without anything about imported songs (what goes to the server) */
+export function withoutImports(data: SaveData): SaveData {
+  return {
+    ...data,
+    bests: Object.fromEntries(Object.entries(data.bests).filter(([id]) => !isImportId(id))),
+    recent: data.recent.filter(e => !isImportId(e.id)),
+  };
+}
+
+export function saveImportProgress(data: SaveData, storage: Pick<Storage, 'setItem'> | null = browserStorage()) {
+  const bests = Object.fromEntries(Object.entries(data.bests).filter(([id]) => isImportId(id)));
+  const recent = data.recent.filter(e => isImportId(e.id));
+  try { storage?.setItem(IMPORT_PROGRESS_KEY, JSON.stringify({ bests, recent })); } catch { /* storage full or blocked */ }
+}
+
+/** put this computer's imported-song progress back into a save (after loading it from the account) */
+export function withImportProgress(data: SaveData, storage: Pick<Storage, 'getItem'> | null = browserStorage()): SaveData {
+  let raw: unknown = null;
+  try { raw = JSON.parse(storage?.getItem(IMPORT_PROGRESS_KEY) ?? 'null'); } catch { /* broken entry */ }
+  const local = sanitize(raw && typeof raw === 'object' ? { bests: (raw as SaveData).bests, recent: (raw as SaveData).recent } : null);
+  const bests = { ...data.bests };
+  for (const [id, b] of Object.entries(local.bests)) if (isImportId(id)) bests[id] = b;
+  const recent = [...data.recent, ...local.recent.filter(e => isImportId(e.id) && !data.recent.some(r => r.id === e.id))];
+  return { ...data, bests, recent };
+}

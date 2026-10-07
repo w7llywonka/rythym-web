@@ -202,6 +202,7 @@ export function buildUI(app: HTMLElement) {
   const best = frame(detail, 'best', { x: 20, y: 312, w: 400, h: 84, r: 12, stroke: T.line });
   label(best, 'header', { text: 'PERSONAL BEST', font: 'black', size: 10, color: T.muted, x: 16, y: 10, w: 200, h: 14 });
   button(best, 'top', { text: 'TOP 10 →', size: 10, x: 130, y: 6, w: 80, h: 22, r: 8, bg: T.bg1 });
+  button(best, 'remove', { text: 'REMOVE IMPORT', size: 10, x: 130, y: 6, w: 110, h: 22, r: 8, bg: T.bg1, color: T.red, hidden: true });
   label(best, 'score', { text: '-', font: 'black', size: 26, x: 16, y: 26, w: 260, h: 30 });
   label(best, 'info', { text: '', font: 'med', size: 14, color: T.muted, x: 16, y: 58, w: 270, h: 18 });
   label(best, 'grade', { text: '-', font: 'black', size: 46, color: T.dim, align: 'right', ax: 1, x: [1, -18], y: 6, w: 100, h: 52 });
