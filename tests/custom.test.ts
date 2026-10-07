@@ -82,3 +82,86 @@ test('imports are tiered by tempo and charted over the whole song', () => {
   const notes = t.charts[t.difficulty]!.notes;
   assert.ok(notes[notes.length - 1].time > long.duration - 15, 'notes run to the end of the song');
 });
+
+// ---- beat-tracked import analysis --------------------------------------------------------------
+const RATE = 22050;
+function drums(opts: { bpm0: number; bpm1?: number; duration: number; pattern: 'four' | 'hiphop' | 'dnb'; pad?: boolean }) {
+  let seed = 7;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296) * 2 - 1;
+  const { bpm0, bpm1 = bpm0, duration, pattern } = opts;
+  const out = new Float32Array(Math.round(duration * RATE));
+  const beats: number[] = [], pads: number[] = [];
+  let t = 0.8, i = 0;
+  while (t < duration - 0.5) {
+    beats.push(t);
+    const beat = 60 / (bpm0 + (bpm1 - bpm0) * (t / duration));
+    for (let q = 0; q < 4; q++) {
+      const at = t + q * beat / 4, s = 4 * i + q, start = Math.round(at * RATE);
+      const kick = pattern === 'four' ? q === 0 : (s % 16 === 0 || s % 16 === 10);
+      const snare = pattern === 'four' ? (q === 0 && i % 2 === 1) : (s % 16 === 4 || s % 16 === 12);
+      for (let k = 0; k < RATE * 0.25 && start + k < out.length; k++) {
+        const x = k / RATE;
+        let v = 0;
+        if (kick) v += Math.sin(2 * Math.PI * (50 * x + 3 * (1 - Math.exp(-x / 0.03)))) * Math.exp(-x / 0.08) * 0.7;
+        if (snare && x < 0.2) v += rand() * 0.5 * Math.exp(-x / 0.05) + Math.sin(2 * Math.PI * 190 * x) * Math.exp(-x / 0.04) * 0.3;
+        if (x < 0.04) v += rand() * Math.exp(-x / 0.008) * 0.12;
+        out[start + k] += v;
+      }
+    }
+    if (opts.pad && i % 8 === 0) {
+      pads.push(t);
+      const start = Math.round(t * RATE);
+      for (let k = 0; k < RATE * beat * 2 && start + k < out.length; k++) out[start + k] += Math.sin(2 * Math.PI * 440 * k / RATE) * 0.25 * Math.min(1, k / 200);
+    }
+    t += beat;
+    i++;
+  }
+  return { out, beats, pads };
+}
+const nearestIndex = (grid: number[], t: number) => grid.reduce((best, g, j) => (Math.abs(g - t) < Math.abs(grid[best] - t) ? j : best), 0);
+
+test('the beat tracker follows tempo drift to within a few milliseconds', async () => {
+  const { out, beats } = drums({ bpm0: 118, bpm1: 130, duration: 50, pattern: 'four' });
+  const a = (await analyzeSamples(out, RATE)).analysis;
+  const errors = beats.map(b => Math.abs(a.grid![nearestIndex(a.grid!, b)] - b)).sort((x, y) => x - y);
+  assert.ok(errors[Math.floor(errors.length * 0.95)] < 0.008, `p95 ${errors[Math.floor(errors.length * 0.95)]}`);
+  // every real beat sits on a beat step of the grid (multiple of 4 from the downbeat)
+  assert.ok(beats.every(b => (nearestIndex(a.grid!, b) - a.downbeat!) % 4 === 0));
+});
+
+test('tempo is read the way people count it: 90 stays 90, DnB is 174', async () => {
+  const hiphop = (await analyzeSamples(drums({ bpm0: 90, duration: 30, pattern: 'hiphop' }).out, RATE)).analysis;
+  assert.ok(Math.abs(hiphop.bpm - 90) < 2, `hip-hop read as ${hiphop.bpm}`);
+  const dnb = (await analyzeSamples(drums({ bpm0: 174, duration: 30, pattern: 'dnb' }).out, RATE)).analysis;
+  assert.ok(Math.abs(dnb.bpm - 174) < 2, `DnB read as ${dnb.bpm}`);
+});
+
+test('held sounds are measured, short hits are not', async () => {
+  const { out, pads, beats } = drums({ bpm0: 100, duration: 30, pattern: 'four', pad: true });
+  const a = (await analyzeSamples(out, RATE)).analysis;
+  const held = (t: number) => parseInt(a.sustain![nearestIndex(a.grid!, t)], 36);
+  // the two-beat pad (8 steps) is measured as held for most of its length
+  for (const t of pads.slice(0, -1)) assert.ok(held(t) >= 6, `pad at ${t.toFixed(2)} held ${held(t)}`);
+  // plain kicks with no pad don't ring
+  const kicksOnly = beats.filter(b => !pads.some(p => Math.abs(p - b) < 0.05) && !pads.some(p => b > p && b < p + 1.3));
+  assert.ok(kicksOnly.filter(b => held(b) >= 4).length <= kicksOnly.length * 0.1);
+});
+
+test('imports repeat their patterns when the music repeats', async () => {
+  const { out } = drums({ bpm0: 128, duration: 40, pattern: 'hiphop' });
+  const song = { ...songs[0], id: 'custom-test', duration: 40, analysis: (await analyzeSamples(out, RATE)).analysis };
+  const t = trackFromImport(song);
+  const chart = t.charts[t.difficulty]!.notes;
+  const grid = t.grid!, down = t.downbeat!;
+  const bars = new Map<number, string>();
+  for (const n of chart) {
+    if (n.endTime !== undefined) continue;
+    const j = nearestIndex(grid, n.time);
+    const bar = Math.floor((j - down) / 16);
+    bars.set(bar, (bars.get(bar) ?? '') + `${(j - down) % 16}:${n.chord ? 'C' : n.lane} `);
+  }
+  // the drum bar is identical throughout, so (ignoring the first and last bar) the lines should be too
+  const patterns = [...bars].sort((x, y) => x[0] - y[0]).slice(1, -1).map(([, p]) => p);
+  const most = Math.max(...[...new Set(patterns)].map(p => patterns.filter(q => q === p).length));
+  assert.ok(most >= patterns.length * 0.7, `${new Set(patterns).size} different patterns over ${patterns.length} bars`);
+});

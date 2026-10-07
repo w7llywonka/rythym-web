@@ -8,7 +8,15 @@ export type HitSound = 'OFF' | 'TICK' | 'MANIA' | 'KICK' | 'CLAP';
 export type NoteStyle = 'Glow' | 'Flat' | 'Outline' | 'Classic';
 
 /** Onset analysis: one digit (0-9) per 16th step for kick/bass, snare/mids and hats/highs. */
-export interface Analysis { bpm: number; offset: number; low: string; mid: string; high: string; gridFit: number }
+/**
+ * Onset grid of a song: one digit (0-9) per 16th-note step for low / mid / high band hit strength.
+ * Imports also carry a beat-tracked grid (exact time of every step), the step of the first
+ * downbeat, how long a sound is held after each step (base-36, in steps) and section energy (0-9).
+ */
+export interface Analysis {
+  bpm: number; offset: number; low: string; mid: string; high: string; gridFit: number;
+  grid?: number[]; downbeat?: number; sustain?: string; energy?: string;
+}
 
 /** A record in song-data.json (the original soundtrack) or a custom import. */
 export interface Song {
@@ -27,6 +35,7 @@ export interface Track {
   id: string; title: string; artist: string; genre: string; seed: number; difficulty: Tier;
   bpm: number; displayBpm: number; offset: number; length: number; displayLength: number; previewStart: number;
   color1: string; color2: string; low: string; mid: string; high: string;
+  grid?: number[]; downbeat?: number; sustain?: string; energy?: string;
   chartStart?: number; chartEnd?: number; custom?: boolean;
   song: Song; charts: Partial<Record<Diff, Chart>>; chartList: Diff[]; level: number;
 }

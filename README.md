@@ -106,7 +106,15 @@ npm run build
 
 ## Songs
 
-There are ten original synthesized tracks (five Easy, five Hard), rendered locally with Web Audio. No samples or downloads are needed. The Roblox version's licensed songs can't be used outside Roblox. Use **+ IMPORT** in song select to play your own audio file. It's analysed in the browser, charted from start to finish, and placed in a tier by its tempo. Nothing is uploaded. See [MUSIC-LICENSE.md](MUSIC-LICENSE.md).
+There are ten original synthesized tracks (five Easy, five Hard), rendered locally with Web Audio. No samples or downloads are needed. The Roblox version's licensed songs can't be used outside Roblox. Use **+ IMPORT** in song select to play your own audio file. Everything happens in your browser (nothing is uploaded):
+
+- **Beat tracking** (dynamic programming over the onset signal) follows the song's real beats, including tempo drift, instead of assuming one perfect tempo. Tempo is chosen from several candidates by how well each one's 16th grid explains the onsets, so half / double time and triplet hi-hats don't fool it.
+- **Onsets** are picked per band (kick, body, presence, air) and each lands on exactly one 16th step. Only clear hits become lines.
+- **Holds** come from sounds that actually ring out (808s, sung or synth notes), followed by pitch so drums on top don't cut them off.
+- **Density follows the song's energy** (drops are busier than breakdowns), and **repeating bars get repeating patterns**, like a hand-made chart.
+- The whole song is charted, and it lands in a tier by its tempo.
+
+On real songs this puts roughly 85–90% of lines exactly on a real onset (within 30 ms). See [MUSIC-LICENSE.md](MUSIC-LICENSE.md).
 
 Charts are generated from each song's measured low/mid/high onsets on a 16th-note grid:
 

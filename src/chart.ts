@@ -43,6 +43,8 @@ export const NEXT: Partial<Record<Diff, Diff>> = { Easy: 'Hard', Hard: 'Expert',
 export interface ChartSource {
   seed: number; bpm: number; offset: number; low: string; mid: string; high: string;
   chartStart?: number; chartEnd?: number;
+  /** beat-tracked imports: exact step times, first downbeat step, held length per step, energy per step */
+  grid?: number[]; downbeat?: number; sustain?: string; energy?: string;
 }
 
 /** Small deterministic PRNG (mulberry32) standing in for Roblox's Random. */
@@ -61,6 +63,8 @@ export class Rng {
 
 interface Step {
   index: number; t: number; L: number; M: number; H: number; strength: number; score: number; allowed: boolean;
+  /** position in the bar: 0 = downbeat, multiples of 4 = beats, even = 8ths, odd = 16ths */
+  pos: number; held: number;
 }
 
 const digit = (s: string, i: number) => {
@@ -75,19 +79,27 @@ function buildSteps(song: ChartSource, profile: Profile): Step[] {
   const tie = new Rng((song.seed + 104729) % 2147483647);
   const n = song.low.length;
   const steps: Step[] = [];
+  const down = song.downbeat ?? 0;
   for (let j = 0; j < n; j++) {
     const L = digit(song.low, j), M = digit(song.mid, j), H = digit(song.high, j);
     const strength = Math.max(L, M, H * 0.8);
+    const pos = (((j - down) % 16) + 16) % 16;
     let bonus = 0, allowed = true;
-    if (j % 4 === 0) bonus = profile.beatBonus;
-    else if (j % 2 === 0) bonus = profile.eighthBonus;
+    if (pos % 4 === 0) bonus = profile.beatBonus + (pos === 0 && song.grid ? 0.3 : 0);
+    else if (pos % 2 === 0) bonus = profile.eighthBonus;
     else allowed = profile.sixteenths;
-    steps.push({ index: j, t: song.offset + j * s16, L, M, H, strength, score: strength + bonus + ((L + M + H) / 27) * 0.04 + tie.next() * 0.01, allowed });
+    // density follows the music: louder sections get more lines, breakdowns fewer
+    const energy = song.energy ? (digit(song.energy, j) - 4.5) * 0.28 : 0;
+    const held = song.sustain ? parseInt(song.sustain[j] ?? '0', 36) || 0 : 0;
+    steps.push({
+      index: j, t: song.grid ? song.grid[j] : song.offset + j * s16, L, M, H, strength,
+      score: strength + bonus + energy + ((L + M + H) / 27) * 0.04 + tie.next() * 0.01, allowed, pos, held,
+    });
   }
   // off-beat 16ths only count when they're a clear peak of their own
   for (let i = 0; i < n; i++) {
     const st = steps[i];
-    if (st.index % 2 === 1 && st.allowed && !profile.loose16) {
+    if (st.pos % 2 === 1 && st.allowed && !profile.loose16) {
       const prev = steps[i - 1], next = steps[i + 1];
       if ((prev && prev.strength >= st.strength) || (next && next.strength >= st.strength)) st.allowed = false;
     }
@@ -103,7 +115,7 @@ function pick(steps: Step[], profile: Profile, threshold: number): Step[] {
   for (const st of steps) {
     // only clear hits get charted: quiet ghost notes and hat noise never become lines,
     // and off-beat 16ths have to be a notch stronger than that
-    const floor = profile.minStrength + (st.index % 2 === 1 ? 1 : 0);
+    const floor = profile.minStrength + (st.pos % 2 === 1 ? 1 : 0);
     if (st.allowed && st.strength >= floor && st.score >= threshold) {
       const last = chosen[chosen.length - 1];
       if (!last || st.t - last.t >= profile.minGap - GAP_SLACK) {
@@ -120,7 +132,12 @@ function pick(steps: Step[], profile: Profile, threshold: number): Step[] {
 
 /** Returns a time-sorted list of notes. Deterministic for a given song + difficulty. */
 export function generateChart(song: ChartSource, difficulty: Diff): ChartNote[] {
-  const profile = PROFILES[difficulty];
+  let profile = PROFILES[difficulty];
+  // imports: Expert and up also take hits a notch softer, so the "+" chart is really denser
+  // (real recordings have fewer max-strength hits than the synthesized soundtrack)
+  if (song.grid && (difficulty === 'Expert' || difficulty === 'Extreme' || difficulty === 'Insane')) {
+    profile = { ...profile, minStrength: profile.minStrength - 1 };
+  }
   const rng = new Rng(song.seed % 2147483647);
   let steps = buildSteps(song, profile);
 
@@ -153,6 +170,7 @@ export function generateChart(song: ChartSource, difficulty: Diff): ChartNote[] 
   const chosen = under.length < target * 0.8 && over.length - target < target - under.length ? over : under;
 
   let notes: ChartNote[] = [];
+  const stepOf = new Map<ChartNote, Step>();
   let prevLane = 0, run = 0, prevT = -Infinity, lastChordT = -Infinity;
   for (const st of chosen) {
     const gap = st.t - prevT;
@@ -166,22 +184,52 @@ export function generateChart(song: ChartSource, difficulty: Diff): ChartNote[] 
 
     const chordAt = profile.chordThreshold ?? 7;
     const isChord = profile.chordGap !== undefined
-      && (st.index % 4 === 0 || (!!profile.offbeatChords && st.index % 2 === 0))
+      && (st.pos % 4 === 0 || (!!profile.offbeatChords && st.pos % 2 === 0))
       && st.L >= chordAt && top >= chordAt
       && gap >= (profile.offbeatChords ? 0.12 : 0.2)
       && st.t - lastChordT >= profile.chordGap;
 
     if (isChord) {
-      notes.push({ time: st.t, lane: 1, chord: true, strength: st.strength });
-      notes.push({ time: st.t, lane: 2, chord: true, strength: st.strength });
+      const a: ChartNote = { time: st.t, lane: 1, chord: true, strength: st.strength };
+      const b: ChartNote = { time: st.t, lane: 2, chord: true, strength: st.strength };
+      notes.push(a, b);
+      stepOf.set(a, st); stepOf.set(b, st);
       lastChordT = st.t;
       prevLane = 0; run = 0;
     } else {
-      notes.push({ time: st.t, lane, chord: false, strength: st.strength });
+      const note: ChartNote = { time: st.t, lane, chord: false, strength: st.strength };
+      notes.push(note);
+      stepOf.set(note, st);
       run = lane === prevLane ? run + 1 : 1;
       prevLane = lane;
     }
     prevT = st.t;
+  }
+
+  // imports: when a bar of music repeats, its lines repeat too (same rhythm -> same pattern),
+  // which is what makes hand-made charts feel intentional
+  if (song.grid) {
+    const down = song.downbeat ?? 0;
+    const bars = new Map<number, ChartNote[]>();
+    for (const note of notes) {
+      const st = stepOf.get(note)!;
+      const bar = Math.floor((st.index - down) / 16);
+      const list = bars.get(bar) ?? [];
+      list.push(note);
+      bars.set(bar, list);
+    }
+    const seen = new Map<string, Lane[]>();
+    for (const [, list] of [...bars].sort((x, y) => x[0] - y[0])) {
+      const sig = list.map(note => {
+        const st = stepOf.get(note)!;
+        const top = Math.max(st.M, st.H);
+        const voice = note.chord ? 'C' : st.L >= top + 2 ? 'K' : top >= st.L + 2 ? 'S' : 'X';
+        return `${st.pos}${voice}`;
+      }).join(',');
+      const lanes = seen.get(sig);
+      if (lanes) list.forEach((note, i) => { if (!note.chord) note.lane = lanes[i]; });
+      else seen.set(sig, list.map(note => note.lane));
+    }
   }
 
   // hold notes: a strong hit followed by room in its lane becomes a line you hold down
@@ -196,12 +244,25 @@ export function generateChart(song: ChartSource, difficulty: Diff): ChartNote[] 
   let lastHoldStart = -Infinity;
   for (let i = 0; i < notes.length; i++) {
     const n = notes[i];
-    if (removed.has(n) || n.chord || (n.strength ?? 0) < 6 || n.time <= busyUntil[n.lane]) continue;
-    if (n.time - lastHoldStart < hold.spacing * beat || hrng.next() >= hold.chance) continue;
-    const beats = hrng.number(hold.minLen, hold.maxLen) * beatScale;
-    const len = Math.max(2, Math.round(beats * beat / s16)) * s16;
-    if (len < 0.3) continue;
-    const tailEnd = n.time + len;
+    if (removed.has(n) || n.chord || n.time <= busyUntil[n.lane]) continue;
+    let tailEnd: number;
+    const st = stepOf.get(n);
+    if (song.sustain && song.grid && st) {
+      // a line becomes a hold only where a sound actually rings out (808, sung or synth note)
+      // held at least 1.5 beats (6 steps): tuned on real songs so synth-heavy tracks don't turn into all holds
+      if ((n.strength ?? 0) < 5 || st.held < 6 || n.time - lastHoldStart < hold.spacing * beat) continue;
+      const lenSteps = Math.min(st.held, Math.round(hold.maxLen * beatScale * 4) + 2);
+      const endStep = Math.min(song.grid.length - 1, st.index + lenSteps);
+      tailEnd = song.grid[endStep] - (song.grid[endStep] - song.grid[endStep - 1]) * 0.25;
+      if (tailEnd - n.time < Math.max(0.3, hold.minLen * beat * 0.75)) continue;
+    } else {
+      if ((n.strength ?? 0) < 6) continue;
+      if (n.time - lastHoldStart < hold.spacing * beat || hrng.next() >= hold.chance) continue;
+      const beats = hrng.number(hold.minLen, hold.maxLen) * beatScale;
+      const len = Math.max(2, Math.round(beats * beat / s16)) * s16;
+      if (len < 0.3) continue;
+      tailEnd = n.time + len;
+    }
     // clear the lane under the hold (and the other lane too where overlap isn't allowed)
     let ok = true;
     const victims: ChartNote[] = [];
