@@ -111,7 +111,10 @@ function updateDetail() {
     txt($('select.detail.pack'), cleared >= total ? `${pack.name}  ·  COMPLETE` : `${pack.name}  ·  ${cleared}/${total} CLEARED`);
     $('select.detail.pack').style.color = cleared >= total ? T.gold : T.muted;
   } else {
-    txt($('select.detail.pack'), t.custom ? 'YOUR IMPORT' : '');
+    // licensed songs show their license (full credits on the home screen's CREDITS)
+    const credit = t.song.credit;
+    txt($('select.detail.pack'), t.custom ? 'YOUR IMPORT' : credit ? `${credit.license.toUpperCase()}  ·  ${credit.source.toUpperCase()}` : '');
+    $('select.detail.pack').style.color = T.muted;
   }
   txt($('select.detail.stats.bpm.value'), String(t.displayBpm));
   txt($('select.detail.stats.length.value'), fmtTime(t.displayLength));

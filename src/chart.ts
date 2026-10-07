@@ -8,7 +8,7 @@ import type { ChartNote, Diff, Lane } from './types.ts';
 
 export interface Profile {
   targetNps: number; minGap: number; beatBonus: number; eighthBonus: number; sixteenths: boolean;
-  minStrength: number; loose16?: boolean; maxRun: number; alternateBelow?: number; chordGap?: number; chordThreshold?: number; offbeatChords?: boolean;
+  minStrength: number; /** extra strength an off-beat 16th needs (default 1) */ oddPenalty?: number; loose16?: boolean; maxRun: number; alternateBelow?: number; chordGap?: number; chordThreshold?: number; offbeatChords?: boolean;
 }
 
 export const PROFILES: Record<Diff, Profile> = {
@@ -107,6 +107,9 @@ function buildSteps(song: ChartSource, profile: Profile): Step[] {
   return steps;
 }
 
+/** strength floor per chart for beat-tracked recordings (see generateChart) */
+const RECORDING_FLOOR: Record<Diff, number> = { Easy: 5, Hard: 4, Expert: 3, Extreme: 2, Insane: 2 };
+
 // so a 16th at ~178 BPM (0.0843s) still counts as an 0.085s gap
 const GAP_SLACK = 0.0015;
 
@@ -115,7 +118,7 @@ function pick(steps: Step[], profile: Profile, threshold: number): Step[] {
   for (const st of steps) {
     // only clear hits get charted: quiet ghost notes and hat noise never become lines,
     // and off-beat 16ths have to be a notch stronger than that
-    const floor = profile.minStrength + (st.pos % 2 === 1 ? 1 : 0);
+    const floor = profile.minStrength + (st.pos % 2 === 1 ? profile.oddPenalty ?? 1 : 0);
     if (st.allowed && st.strength >= floor && st.score >= threshold) {
       const last = chosen[chosen.length - 1];
       if (!last || st.t - last.t >= profile.minGap - GAP_SLACK) {
@@ -135,9 +138,10 @@ export function generateChart(song: ChartSource, difficulty: Diff): ChartNote[] 
   let profile = PROFILES[difficulty];
   // imports: Expert and up also take hits a notch softer, so the "+" chart is really denser
   // (real recordings have fewer max-strength hits than the synthesized soundtrack)
-  if (song.grid && (difficulty === 'Expert' || difficulty === 'Extreme' || difficulty === 'Insane')) {
-    profile = { ...profile, minStrength: profile.minStrength - 1 };
-  }
+  // beat-tracked recordings (imports, licensed tracks): real mixes have fewer max-strength hits than the
+  // synthesized soundtrack, so harder charts take softer hits too (tuned on real songs: dense enough
+  // that fast songs chart fast, while most lines still land on a real onset)
+  if (song.grid) profile = { ...profile, minStrength: RECORDING_FLOOR[difficulty], oddPenalty: 0 };
   const rng = new Rng(song.seed % 2147483647);
   let steps = buildSteps(song, profile);
 

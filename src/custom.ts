@@ -1,3 +1,4 @@
+import { gridFromBeats, roundBeats } from './beatgrid.ts';
 import type { Analysis, Song } from './types.ts';
 
 const FFT_SIZE = 1024;
@@ -186,11 +187,9 @@ export async function analyzeSamples(input: Float32Array, inputRate: number, onP
   });
   const downbeatBeat = phaseScore.indexOf(Math.max(...phaseScore));
 
-  const grid: number[] = [];
-  for (let i = 0; i < beats.length; i++) {
-    const span = (beats[i + 1] ?? beats[i] + tail) - beats[i];
-    for (let q = 0; q < 4; q++) grid.push(beats[i] + span * q / 4);
-  }
+  // beat boundaries (plus where the last beat ends) are what gets stored; the grid is rebuilt from them
+  const bounds = roundBeats([...beats, beats[beats.length - 1] + tail]);
+  const grid = gridFromBeats(bounds);
   while (grid.length && grid[grid.length - 1] > duration - 0.05) grid.pop();
   const steps = grid.length;
   const stepLength = (j: number) => (grid[j + 1] ?? grid[j] + (grid[j] - grid[j - 1])) - grid[j];
@@ -288,7 +287,7 @@ export async function analyzeSamples(input: Float32Array, inputRate: number, onP
   const analysis: Analysis = {
     bpm, offset: grid[0],
     low: Array.from(stepDigits[0]).join(''), mid: Array.from(stepDigits[1]).join(''), high: Array.from(stepDigits[2]).join(''),
-    gridFit, grid: grid.map(t => Math.round(t * 10000) / 10000), downbeat: downbeatBeat * 4,
+    gridFit, grid, beats: bounds, downbeat: downbeatBeat * 4,
     sustain: sustainChars.join(''), energy: energyChars.join(''),
   };
   onProgress('Your custom challenge is ready.');

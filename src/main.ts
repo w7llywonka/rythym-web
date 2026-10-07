@@ -4,6 +4,7 @@ import './style.css';
 import { initAccounts, restoreSession } from './app/accounts.ts';
 import { initBoard } from './app/board.ts';
 import { initCalibration } from './app/calibration.ts';
+import { initCredits } from './app/credits.ts';
 import { initCustomize } from './app/customize.ts';
 import { initHome } from './app/home.ts';
 import { initKeyboard } from './app/keyboard.ts';
@@ -38,6 +39,7 @@ initSettings();
 initCustomize();
 initAccounts();
 initHome();
+initCredits();
 initKeyboard();
 initPreview();
 

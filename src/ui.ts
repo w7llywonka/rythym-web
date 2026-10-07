@@ -136,6 +136,7 @@ export function buildUI(app: HTMLElement) {
   button(home, 'play', { text: 'PLAY', size: 30, ax: 0.5, x: [0.5, 0], y: 350, w: 300, h: 64, r: 16 }, 'primary');
   button(home, 'settings', { text: 'SETTINGS', size: 13, ax: 0.5, x: [0.5, 0], y: 426, w: 300, h: 50, r: 14 });
   label(home, 'howto', { html: '', font: 'med', size: 14, color: T.muted, align: 'center', wrap: true, ax: 0.5, x: [0.5, 0], y: 492, w: 340, h: 40 });
+  button(home, 'credits', { text: 'CREDITS', size: 10, ax: 1, ay: 1, x: [1, -30], y: [1, -14], w: 84, h: 28, r: 8 });
   label(home, 'nowplaying', { html: '', font: 'med', size: 14, color: T.dim, align: 'center', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -18], w: 800, h: 20 });
   const chip = frame(home, 'chip', { x: 30, y: 24, w: 300, h: 64, r: 14 });
   label(chip, 'name', { text: 'Player', font: 'black', size: 16, truncate: true, x: 14, y: 8, w: 180, h: 20 });
@@ -519,6 +520,12 @@ export function buildUI(app: HTMLElement) {
   label(ch, 'text', { html: '', font: 'med', size: 14, wrap: true, valign: 'top', x: 18, y: 34, w: 404, h: 36 });
   button(ch, 'accept', { text: 'ACCEPT', size: 13, x: 18, y: 74, w: 196, h: 36, r: 10 }, 'primary');
   button(ch, 'decline', { text: 'DECLINE', size: 13, x: 226, y: 74, w: 196, h: 36, r: 10 });
+
+  // credits for licensed music
+  const cr = panel(overlay, 'credits', 620, 560);
+  label(cr, 'title', { text: 'Credits', font: 'black', size: 26, x: 32, y: 26, w: 400, h: 36 });
+  label(cr, 'sub', { text: 'Songs by other artists, used under their licenses. Thank you!', font: 'med', size: 13, color: T.muted, x: 32, y: 62, w: 520, h: 18 });
+  frame(cr, 'list', { x: 32, y: 96, w: 556, h: 432, scroll: true });
 
   // account (login / sign up / manage)
   buildAccountPanels(overlay, app);

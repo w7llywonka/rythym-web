@@ -56,10 +56,16 @@ export class AudioEngine {
   get latency() { return this.ctx ? (this.ctx.baseLatency || 0) + (this.ctx.outputLatency || 0) : 0; }
   get now() { return this.ctx?.currentTime ?? 0; }
 
+  /** the song's audio: licensed tracks are files on our server ("file:/music/x.mp3"), originals are synthesized */
   load(song: Song): Promise<AudioBuffer> {
     let p = this.buffers.get(song.id);
     if (!p) {
-      p = this.unlock().then(ctx => renderSong(song, ctx));
+      p = this.unlock().then(async ctx => {
+        if (!song.audio.startsWith('file:')) return renderSong(song, ctx);
+        const res = await fetch(song.audio.slice(5));
+        if (!res.ok) throw new Error(`audio ${res.status}`);
+        return ctx.decodeAudioData(await res.arrayBuffer());
+      });
       this.buffers.set(song.id, p);
       p.catch(() => this.buffers.delete(song.id));
     }

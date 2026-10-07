@@ -9,9 +9,12 @@
     "start": "node server.js",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "charts": "node --experimental-strip-types scripts/chart-objects.ts"
+    "charts": "node --experimental-strip-types scripts/chart-objects.ts",
+    "tracks": "node --experimental-strip-types scripts/add-tracks.ts"
   },
   "devDependencies": {
+    "@breezystack/lamejs": "^1.2.7",
+    "audio-decode": "^2.2.3",
     "typescript": "~5.9.3",
     "vite": "^7.3.0"
   },

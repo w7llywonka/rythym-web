@@ -16,12 +16,21 @@ export type NoteStyle = 'Glow' | 'Flat' | 'Outline' | 'Classic';
 export interface Analysis {
   bpm: number; offset: number; low: string; mid: string; high: string; gridFit: number;
   grid?: number[]; downbeat?: number; sustain?: string; energy?: string;
+  /** beat boundaries the grid is built from (stored instead of the grid for bundled tracks) */
+  beats?: number[];
 }
+
+/** credit for a licensed (non-original) track; shown in game and in MUSIC-LICENSE.md */
+export interface Credit { license: string; licenseUrl: string; source: string; sourceUrl: string }
 
 /** A record in song-data.json (the original soundtrack) or a custom import. */
 export interface Song {
   id: string; title: string; artist: string; genre: string; bpm: number; duration: number; level: number;
   difficulty: Tier; color: string; color2: string; audio: string; previewStart: number; seed: number; analysis: Analysis;
+  /** licensed tracks: who made it and under which license */
+  credit?: Credit;
+  /** licensed Extreme tracks are charted on their busiest stretch (seconds) */
+  window?: { start: number; end: number };
 }
 
 export interface ChartNote { time: number; lane: Lane; chord: boolean; strength?: number; endTime?: number }

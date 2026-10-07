@@ -1,7 +1,7 @@
 // Turns soundtrack / imported songs into playable tracks with generated charts.
 import { generateChart, NEXT } from './chart.ts';
 import { LEVEL_BONUS } from './config.ts';
-import { songs } from './songs.ts';
+import { licensedSongs, songs } from './songs.ts';
 import type { Chart, Diff, Song, Tier, Track } from './types.ts';
 
 export function buildCharts(track: Track): void {
@@ -39,10 +39,19 @@ export function trackFromSong(song: Song, overrides: Partial<Track> = {}): Track
 /** Imported recordings land in a tier by tempo and are charted from start to finish. */
 export function trackFromImport(song: Song): Track {
   const bpm = song.analysis.bpm;
-  const tier: Tier = bpm < 115 ? 'Easy' : bpm < 145 ? 'Hard' : bpm < 170 ? 'Expert' : 'Extreme';
+  // most energetic rap / drill / EDM sits at 130-160 BPM: that's Expert, not Hard
+  const tier: Tier = bpm < 100 ? 'Easy' : bpm < 128 ? 'Hard' : bpm < 165 ? 'Expert' : 'Extreme';
   return trackFromSong({ ...song, difficulty: tier }, { difficulty: tier, custom: true });
 }
 
+/** licensed Extreme tracks are charted on their busiest stretch (chosen offline, stored as `window`) */
+function windowed(song: Song): Partial<Track> {
+  const w = song.window;
+  if (!w) return {};
+  return { chartStart: w.start, chartEnd: w.end, displayLength: w.end - w.start, previewStart: w.start + Math.min(20, (w.end - w.start) * 0.3) };
+}
+
+/** every built-in song: the original soundtrack plus the licensed tracks */
 export function soundtrack(): Track[] {
-  return songs.map(song => trackFromSong(song));
+  return [...songs, ...licensedSongs].map(song => trackFromSong(song, windowed(song)));
 }

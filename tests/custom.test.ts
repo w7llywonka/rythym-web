@@ -68,10 +68,10 @@ test('import is local, retains playback PCM, and creates a stable hard chart ide
 test('imports are tiered by tempo and charted over the whole song', () => {
   const base = songs.find(song => song.id === 'hyperlane')!;
   const tierAt = (bpm: number) => trackFromImport({ ...base, analysis: { ...base.analysis, bpm } }).difficulty;
-  assert.equal(tierAt(100), 'Easy');
-  assert.equal(tierAt(130), 'Hard');
-  assert.equal(tierAt(160), 'Expert');
-  assert.equal(tierAt(180), 'Extreme');
+  assert.equal(tierAt(90), 'Easy');
+  assert.equal(tierAt(115), 'Hard');
+  assert.equal(tierAt(140), 'Expert'); // energetic rap / EDM tempos are Expert
+  assert.equal(tierAt(175), 'Extreme');
   // repeat the onset grid to make a long (5 minute) recording
   const a = base.analysis, times = 6;
   const long = { ...base, duration: base.duration * times, analysis: { ...a, low: a.low.repeat(times), mid: a.mid.repeat(times), high: a.high.repeat(times) } };

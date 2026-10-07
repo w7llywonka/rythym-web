@@ -4,7 +4,7 @@
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { brotliCompressSync, constants as zlib, gzipSync } from 'node:zlib';
-import { readFileSync } from 'node:fs';
+import { createReadStream, readFileSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAuth, fromNode, sendNode } from './api/_lib/core.js';
@@ -16,6 +16,7 @@ const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json',
   '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json',
+  '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.flac': 'audio/flac', '.m4a': 'audio/mp4',
 };
 
 function securityHeaders() {
@@ -41,6 +42,14 @@ export function createApp({ dist = join(here, 'dist'), store = storeFromEnv(), t
   const packed = new Map();
   async function serveFile(req, res, path, cache) {
     const type = TYPES[extname(path)] ?? 'application/octet-stream';
+    if (!COMPRESSIBLE.has(extname(path))) {
+      // audio and other binary files are streamed, not held in memory
+      const info = await stat(path);
+      res.writeHead(200, { ...headers, 'Content-Type': type, 'Cache-Control': cache, 'Content-Length': info.size });
+      if (req.method === 'HEAD') return res.end();
+      createReadStream(path).on('error', () => res.destroy()).pipe(res);
+      return;
+    }
     const accept = String(req.headers['accept-encoding'] ?? '');
     const wants = accept.split(',').map(e => e.trim().split(';')[0]);
     const encoding = !COMPRESSIBLE.has(extname(path)) ? null : wants.includes('br') ? 'br' : wants.includes('gzip') ? 'gzip' : null;
@@ -87,7 +96,8 @@ export function createApp({ dist = join(here, 'dist'), store = storeFromEnv(), t
         const info = await stat(path).catch(() => null);
         if (info?.isFile()) {
           const hashed = path.startsWith(join(root, 'assets') + sep);
-          return await serveFile(req, res, path, hashed ? 'public, max-age=31536000, immutable' : 'no-cache');
+          const music = path.startsWith(join(root, 'music') + sep); // song files never change in place
+          return await serveFile(req, res, path, hashed ? 'public, max-age=31536000, immutable' : music ? 'public, max-age=604800' : 'no-cache');
         }
       }
       return await serveFile(req, res, join(root, 'index.html'), 'no-cache');
