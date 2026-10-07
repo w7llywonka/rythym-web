@@ -33,7 +33,7 @@ export interface Run {
 export interface GameHooks {
   settings: () => Settings;
   onFinish: (run: Run, cleared: boolean) => void;
-  onLoadFail: () => void;
+  onLoadFail: (run: Run) => void;
   showGame: (setup: () => void, quick: boolean) => Promise<void>;
 }
 
@@ -607,7 +607,7 @@ export class Game {
     try {
       buffer = await this.audio.load(track.song);
     } catch {
-      if (this.run === r) { this.stop(); this.hooks.onLoadFail(); }
+      if (this.run === r) { this.stop(); this.hooks.onLoadFail(r); }
       return;
     }
     if (this.run !== r) return;

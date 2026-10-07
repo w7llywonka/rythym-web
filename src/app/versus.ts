@@ -9,9 +9,10 @@ import type { Diff, PlaySet } from '../types.ts';
 import { $, html, show, txt } from '../ui.ts';
 import { openAuth, signedOut } from './accounts.ts';
 import { quitToSongs, startRun } from './play.ts';
-import { game } from './services.ts';
+import { audio, game } from './services.ts';
 import { closeModal, escapeHtml, isOpen, onClick, openModal, queueToast, showToast } from './shell.ts';
 import { S, chartFor } from './state.ts';
+import { SongPrep, latestStart } from './vsPrep.ts';
 
 const REACTIONS = ['🔥', '😂', '😤', 'GG'];
 export const VS_REACT_KEYS: Record<string, number> = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Numpad1: 1, Numpad2: 2, Numpad3: 3, Numpad4: 4 };
@@ -25,10 +26,15 @@ const vs = {
   onResults: false,
   /** the last challenge answered here, so a poll that's in flight can't bring the pop-up back */
   answered: '',
+  /** the last match given up here, so a poll that's in flight can't pull us back in */
+  left: '',
   incoming: null as { from: string; songId: string; diff: string; expiresAt: number } | null,
   current: null as { matchId: string; opponent: string; oppScore: number; result: VsMatch['result'] } | null,
 };
+/** the pop-up's song, downloading / decoding: ACCEPT waits for it */
+const prep = new SongPrep();
 const serverNow = () => Date.now() + vs.offset;
+const keyOf = (c: { from: string; songId: string; diff: string }) => `${c.from}:${c.songId}:${c.diff}`;
 export const vsActive = () => vs.current !== null;
 
 function lobbyTrack() {
@@ -74,6 +80,8 @@ async function challenge(name: string) {
   if (!pick) return txt(status, 'Pick a song in Song Select first.');
   if (pick.t.custom) return txt(status, 'Imported songs only exist on your computer. Pick a Line Rush song for 1v1.');
   txt(status, 'Sending challenge...');
+  // licensed songs are downloads: start now so it's ready (and cached for the run) when they accept
+  void audio.load(pick.t.song);
   const res = await api.vsChallenge(name, pick.t.id, pick.diff);
   txt(status, res.ok ? `Challenge sent to ${res.data!.to}. Waiting for them to accept...` : res.error ?? 'Something went wrong.');
 }
@@ -84,18 +92,36 @@ function showPopup() {
   if (!inc) { show(box, false); return; }
   const t = S.tracksById.get(inc.songId);
   html($('challenge.text'), `<b>${escapeHtml(inc.from)}</b> wants to battle on <b>${escapeHtml(t?.title ?? '?')}</b> [${MODES[inc.diff as Diff]?.label ?? ''}]`);
+  // accepting starts the battle ~6 s later, so the song has to be here first
+  const ready = prep.ready(keyOf(inc));
+  const accept = $('challenge.accept') as HTMLButtonElement;
+  txt(accept, ready ? 'ACCEPT' : 'LOADING…');
+  accept.disabled = !ready;
+  accept.classList.toggle('disabled', !ready);
   if (box.hidden) {
     show(box, true);
     tween(box, 'slide', -150, 20, 0.3, v => { box.style.top = `${v}px`; }, ease.back);
   }
 }
 
+/** download + decode the challenge's song while the pop-up is up (the same cache the run plays from) */
+function prepare(inc: { from: string; songId: string; diff: string }) {
+  const t = S.tracksById.get(inc.songId);
+  prep.want(keyOf(inc), () => (t ? audio.load(t.song) : Promise.reject(new Error('unknown song'))), state => {
+    if (!vs.incoming || keyOf(vs.incoming) !== keyOf(inc)) return; // pop-up's gone
+    if (state === 'ready') return showPopup();
+    showToast(`Couldn't load ${t?.title ?? 'that song'}, so the challenge was declined.`);
+    void respond(false);
+  });
+}
+
 async function respond(accept: boolean) {
   const inc = vs.incoming;
+  if (accept && inc && !prep.ready(keyOf(inc))) return; // still loading (the button is disabled)
   vs.incoming = null;
   showPopup();
   if (!inc) return;
-  vs.answered = `${inc.from}:${inc.songId}:${inc.diff}`;
+  vs.answered = keyOf(inc);
   const res = await api.vsRespond(inc.from, accept);
   if (!res.ok) return showToast(res.error ?? 'That challenge expired.');
   if (accept && res.data?.match) begin(res.data.match);
@@ -103,7 +129,7 @@ async function respond(accept: boolean) {
 
 function begin(m: VsMatch) {
   const t = S.tracksById.get(m.songId);
-  if (!t) { void api.vsForfeit(m.id); return showToast("Couldn't load that song."); }
+  if (!t) { leave(m.id); return showToast("Couldn't load that song, so you forfeited."); }
   vs.incoming = null;
   showPopup();
   vs.current = { matchId: m.id, opponent: m.opponent, oppScore: 0, result: null };
@@ -118,6 +144,31 @@ function begin(m: VsMatch) {
     set: VS_SET,
     versus: { matchId: m.id, opponent: m.opponent, leadIn: () => (m.startAt - serverNow()) / 1000 },
   });
+  // still loading when the run could no longer finish before the server's deadline? It can't count,
+  // so forfeit then instead of playing it out into a timeout loss
+  const chart = t.charts[m.diff as Diff] ?? t.charts[t.difficulty]!;
+  const giveUpAt = latestStart(m.endBy, chart.endTime - (t.chartStart ?? 0));
+  window.setTimeout(() => {
+    const r = game.run;
+    if (r?.opts?.versus?.matchId !== m.id || r.ready || vs.current?.matchId !== m.id || vs.current.result) return;
+    vsLoadFailed(m.id, 'The song took too long to load');
+    quitToSongs();
+  }, Math.max(0, giveUpAt - serverNow()));
+}
+
+/** give up a match (it counts as a loss) */
+function leave(matchId: string) {
+  void api.vsForfeit(matchId);
+  vs.left = matchId;
+  if (vs.current?.matchId === matchId) vs.current = null;
+}
+
+/** a 1v1 whose song won't load: forfeit right away, rather than leave the opponent waiting for the timeout */
+export function vsLoadFailed(matchId: string, why = "Couldn't load the song") {
+  const c = vs.current?.matchId === matchId ? vs.current : null;
+  if (c?.result) { vs.current = null; return showToast(`${why}.`); } // already settled (they left first)
+  leave(matchId);
+  showToast(`${why}, so you forfeited${c ? ` vs ${c.opponent}` : ''}.`);
 }
 
 function apply(d: VsPoll, sentAt: number) {
@@ -125,8 +176,9 @@ function apply(d: VsPoll, sentAt: number) {
   const sample = d.now - (sentAt + Date.now()) / 2;
   vs.offset = vs.offset === 0 ? sample : vs.offset * 0.8 + sample * 0.2;
   const inc = d.incoming;
-  if (inc && !vs.current && `${inc.from}:${inc.songId}:${inc.diff}` !== vs.answered) {
+  if (inc && !vs.current && keyOf(inc) !== vs.answered) {
     vs.incoming = { from: inc.from, songId: inc.songId, diff: inc.diff, expiresAt: Date.now() + inc.expiresIn };
+    prepare(inc);
   } else if (!inc) {
     vs.incoming = null;
     vs.answered = '';
@@ -142,7 +194,7 @@ function apply(d: VsPoll, sentAt: number) {
     else if (e.type === 'forfeit' && vs.current) showToast(`${vs.current.opponent} left the battle. You win!`);
   }
   const m = d.match;
-  if (m && !vs.current && !m.result && serverNow() < m.endBy) begin(m);
+  if (m && !vs.current && !m.result && m.id !== vs.left && serverNow() < m.endBy) begin(m);
   if (m && vs.current && m.id === vs.current.matchId) {
     if (m.opp) {
       vs.current.oppScore = m.oppDone ?? m.opp.score;
@@ -232,8 +284,7 @@ export function vsFinal(r: Run, cleared: boolean) {
 export function vsAskForfeit() {
   const v = game.run?.opts?.versus;
   if (!v || !window.confirm(`Leave the 1v1 against ${v.opponent}? It counts as a loss.`)) return;
-  void api.vsForfeit(v.matchId);
-  vs.current = null;
+  leave(v.matchId);
   quitToSongs();
 }
 
@@ -282,7 +333,12 @@ export function initVersus() {
     const inc = vs.incoming;
     if (!inc) return;
     const left = Math.ceil((inc.expiresAt - Date.now()) / 1000);
-    if (left <= 0) { vs.incoming = null; showPopup(); return; }
+    if (left <= 0) {
+      if (!prep.ready(keyOf(inc))) showToast('That challenge ran out before the song finished loading.');
+      vs.incoming = null;
+      showPopup();
+      return;
+    }
     txt($('challenge.timer'), `${left}s`);
   }, 250);
 }

@@ -40,7 +40,7 @@ Timing windows, health drain and fall speed tighten with each tier:
 
 Perfect, Great and Good score 300/200/100. Combos of 10/25/50 give ×2/×3/×4. Grades: SS is all Perfect; otherwise S ≥95%, A ≥90%, B ≥80%, C ≥70%, D below that, and F if you fail.
 
-**1v1** (needs an account): open 1V1 on the home screen to see who's online and challenge them on the song you have selected. They get a pop-up for 20 seconds; once accepted, you both start the same chart at the same server moment, see each other's live score, combo and health, and can send reactions with keys 1–4 (🔥 😂 😤 GG). No pausing; leaving counts as a forfeit. Highest score wins.
+**1v1** (needs an account): open 1V1 on the home screen to see who's online and challenge them on the song you have selected. They get a pop-up for 20 seconds, and the song downloads while it's up (ACCEPT shows LOADING… until it's ready; if it can't load, the challenge is declined). Once accepted, you both start the same chart at the same server moment, see each other's live score, combo and health, and can send reactions with keys 1–4 (🔥 😂 😤 GG). No pausing; leaving counts as a forfeit, and so does a battle whose song can't load in time. Highest score wins.
 
 **Online** (needs the server; anyone can view, an account is needed to post):
 - **Leaderboards**: every built-in chart has a global top 10 (TOP 10 on the song panel) with your own best and rank. Finishing a ranked run posts your score; the results screen shows your worldwide rank. Scores above what the chart allows are rejected.
@@ -137,7 +137,7 @@ Timing runs on the Web Audio clock (`AudioContext.currentTime`) with latency com
 
 - `src/main.ts`: startup (builds the UI, wires every screen, restores the session)
 - `src/app/`: one module per screen or panel, sharing `state.ts`
-  - `home` · `select` (song list + imports) · `play` (start / pause / quit) · `results` · `board` (leaderboards) · `versus` (1v1) · `profile` · `stylePanel` · `settingsPanel` · `customize` · `calibration` · `accounts`
+  - `home` · `select` (song list + imports) · `play` (start / pause / quit) · `results` · `board` (leaderboards) · `versus` (1v1, with `vsPrep`: getting the song ready in time) · `profile` · `stylePanel` · `settingsPanel` · `customize` · `calibration` · `accounts`
   - `shell` (screens, panels, toasts) · `save` · `preview` (menu music) · `keyboard` · `loop` (frame loop) · `services` (audio + game engines)
 - `src/game.ts`: gameplay (notes, holds, mines, judging, health, HUD)
 - `src/ui.ts`, `src/style.css`, `src/anim.ts`, `src/look.ts`: the interface, laid out like the Roblox ScreenGui (1100×640, scaled to fit), and how the lines look

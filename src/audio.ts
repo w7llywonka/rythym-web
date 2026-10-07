@@ -23,7 +23,8 @@ export class AudioEngine {
   /** where imported songs' audio comes from ("local:..." songs, stored on this computer) */
   localSource: ((id: string) => Promise<ArrayBuffer | null>) | null = null;
 
-  async unlock(): Promise<AudioContext> {
+  /** the context, made on first use (it stays suspended until the first click / key press) */
+  private context(): AudioContext {
     if (!this.ctx) {
       this.ctx = new AudioContext({ latencyHint: 'interactive' });
       this.master = this.ctx.createGain();
@@ -33,10 +34,15 @@ export class AudioEngine {
       this.buildHitSounds();
       this.setVolume(this.volume);
     }
-    if (this.ctx.state !== 'running') {
-      try { await this.ctx.resume(); } catch { /* resumes on the next gesture */ }
-    }
     return this.ctx;
+  }
+
+  async unlock(): Promise<AudioContext> {
+    const ctx = this.context();
+    if (ctx.state !== 'running') {
+      try { await ctx.resume(); } catch { /* resumes on the next gesture */ }
+    }
+    return ctx;
   }
 
   /** Resolves once the browser lets audio play (after the first click / key press). */
@@ -62,7 +68,9 @@ export class AudioEngine {
   load(song: Song): Promise<AudioBuffer> {
     let p = this.buffers.get(song.id);
     if (!p) {
-      p = this.unlock().then(async ctx => {
+      // decoding works before sound is allowed, so this doesn't wait for unlock() (1v1 pop-ups load early)
+      p = Promise.resolve().then(async () => {
+        const ctx = this.context();
         if (song.audio.startsWith('local:')) {
           const bytes = await this.localSource?.(song.id);
           if (!bytes) throw new Error('import audio missing');

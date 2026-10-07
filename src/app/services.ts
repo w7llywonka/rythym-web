@@ -5,13 +5,19 @@ import { Game } from '../game.ts';
 import { finishRun } from './results.ts';
 import { go, showToast } from './shell.ts';
 import { S, settings } from './state.ts';
+import { vsLoadFailed } from './versus.ts';
 
 export const audio = new AudioEngine();
 
 export const game = new Game(audio, {
   settings,
   onFinish: (r, cleared) => finishRun(r, cleared),
-  onLoadFail: () => { showToast("Couldn't load that song. Try again."); void go('select'); },
+  onLoadFail: r => {
+    // a 1v1 is forfeited, so the opponent isn't left waiting minutes for the timeout
+    if (r.opts?.versus) vsLoadFailed(r.opts.versus.matchId);
+    else showToast("Couldn't load that song. Try again.");
+    void go('select');
+  },
   showGame: (setup, quick) => {
     if (quick && S.screen === 'game') { setup(); return Promise.resolve(); }
     return go('game', setup);
