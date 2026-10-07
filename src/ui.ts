@@ -196,6 +196,9 @@ export function buildUI(app: HTMLElement) {
     label(box, 'value', { text: '-', font: 'black', size: 19, align: 'center', x: 0, y: 9, w: 91, h: 24 });
     label(box, 'label', { text: nm.toUpperCase(), size: 10, color: T.muted, align: 'center', x: 0, y: 33, w: 91, h: 14 });
   });
+  // imports: halve / double the tempo when the beatmapper counted it the wrong way
+  button(stats, 'half', { text: '½×', size: 10, x: 7, y: 33, w: 37, h: 17, r: 6, bg: T.bg1, hidden: true });
+  button(stats, 'double', { text: '2×', size: 10, x: 47, y: 33, w: 37, h: 17, r: 6, bg: T.bg1, hidden: true });
   const chartRow = frame(detail, 'chartrow', { x: 20, y: 262, w: 400, h: 40 });
   button(chartRow, 'base', { text: 'EASY', size: 14, x: 0, y: 0, w: 196, h: 40, r: 10 });
   button(chartRow, 'plus', { text: 'HARD +', size: 14, x: 204, y: 0, w: 196, h: 40, r: 10 });

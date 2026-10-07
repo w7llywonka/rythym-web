@@ -1,7 +1,7 @@
 // Song select: tier tabs (+ Recent), song cards, the detail panel with chart picker and personal
 // best, and importing your own audio file.
 import { K, MODES, STAR_COLORS, T, TAB_INFO, TAB_ORDER, type Pack, type Tab } from '../config.ts';
-import { importSong } from '../custom.ts';
+import { importSong, retimeImport } from '../custom.ts';
 import { currentSet, fmtTime, formatNumber, gradeColor, setMultiplier, setSummary } from '../scoring.ts';
 import { dropImportProgress } from '../storage.ts';
 import { trackFromImport } from '../tracks.ts';
@@ -12,7 +12,7 @@ import { openSettings } from './settingsPanel.ts';
 import { startRun } from './play.ts';
 import { playPreview } from './preview.ts';
 import { audio } from './services.ts';
-import { loadImportAudio, loadImports, removeImport, saveImport } from './importStore.ts';
+import { loadImportAudio, loadImports, removeImport, saveImport, updateImportSong } from './importStore.ts';
 import { queueSave } from './save.ts';
 import { go, onClick, setAmbient, showToast } from './shell.ts';
 import { S, bestKey, chartFor, packOf, setTracks, settings } from './state.ts';
@@ -142,6 +142,8 @@ function updateDetail() {
   // imports have no online board
   show($('select.detail.best.top'), !t.custom);
   show($('select.detail.best.remove'), !!t.custom);
+  for (const name of ['half', 'double']) show($(`select.detail.stats.${name}`), !!t.custom);
+  show($('select.detail.stats.bpm.label'), !t.custom);
   const b = S.data.bests[bestKey(t, chart.diff)];
   txt($('select.detail.best.score'), b ? formatNumber(b.score) : '-');
   txt($('select.detail.best.info'), b ? `${b.accuracy.toFixed(2)}%  ·  ${b.combo} max combo` : 'No clears yet. Go set a score!');
@@ -249,7 +251,7 @@ async function importFile(file: File) {
     let kept = true;
     try { await saveImport(imported.song, file); } catch { kept = false; }
     showToast(imported.warning ?? (kept
-      ? `${t.title} added to ${MODES[t.difficulty].label} and saved on this computer`
+      ? `${t.title} added to ${MODES[t.difficulty].label} and saved on this computer. Tempo off? Use ½× or 2× under the BPM.`
       : `${t.title} added to ${MODES[t.difficulty].label} (couldn't save it on this computer, so it's here until you close the tab)`));
   } catch (e) {
     showToast(e instanceof Error ? e.message : "Couldn't import that file.");
@@ -265,6 +267,39 @@ async function restoreImports() {
   setTracks([...S.tracks.filter(t => !restored.some(r => r.id === t.id)), ...restored]);
   for (const tab of TAB_ORDER) S.selectedSong[tab] ??= songsFor(tab)[0];
   if (S.screen === 'select') buildList();
+}
+
+/** chart the selected import again at half or double its tempo (some songs can be counted either way) */
+let retiming = false;
+async function retimeSelected(factor: 0.5 | 2) {
+  const t = S.selectedSong[S.tab];
+  if (!t?.custom || retiming) return;
+  const bpm = Math.round(t.bpm * factor * 100) / 100;
+  if (bpm < 50 || bpm > 260) {
+    showToast(factor > 1 ? 'That would be too fast to chart.' : 'That would be too slow to chart.');
+    return;
+  }
+  retiming = true;
+  try {
+    showToast(`Charting ${t.title} at ${Math.round(bpm)} BPM…`);
+    const song = await retimeImport(t.song, await audio.load(t.song), bpm, text => showToast(text));
+    const next = trackFromImport(song);
+    if (!next.charts[next.difficulty]) throw new Error("Couldn't chart it at that tempo.");
+    try { await updateImportSong(song); } catch { /* still works until the tab is closed */ }
+    // it's a different chart now, so the old scores don't apply
+    S.data = dropImportProgress(S.data, t.id);
+    queueSave();
+    setTracks([...S.tracks.filter(x => x.id !== t.id), next]);
+    for (const tab of TAB_ORDER) if (S.selectedSong[tab] === t) S.selectedSong[tab] = undefined;
+    S.selectedSong[next.difficulty] = next;
+    setTab(next.difficulty);
+    selectSong(next);
+    showToast(`${next.title}: ${next.displayBpm} BPM, ${MODES[next.difficulty].label} LV ${next.level}`);
+  } catch (e) {
+    showToast(e instanceof Error ? e.message : "Couldn't chart that song again.");
+  } finally {
+    retiming = false;
+  }
 }
 
 async function removeSelectedImport() {
@@ -320,6 +355,8 @@ export function initSelect() {
 
   for (const tab of TAB_ORDER) S.selectedSong[tab] = songsFor(tab)[0];
   onClick('select.detail.best.remove', () => void removeSelectedImport());
+  onClick('select.detail.stats.half', () => void retimeSelected(0.5));
+  onClick('select.detail.stats.double', () => void retimeSelected(2));
   audio.localSource = loadImportAudio;
   void restoreImports();
 }

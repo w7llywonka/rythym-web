@@ -46,6 +46,16 @@ export async function saveImport(song: Song, file: Blob) {
   void navigator.storage?.persist?.().catch(() => {});
 }
 
+/** replace a saved import's song data (e.g. charted again at another tempo); its audio and place stay */
+export async function updateImportSong(song: Song) {
+  await saving.get(song.id)?.catch(() => {});
+  await run([SONGS], 'readwrite', tx => {
+    const store = tx.objectStore(SONGS);
+    const req = store.get(song.id);
+    req.onsuccess = () => { if (req.result) store.put({ ...req.result, song }); };
+  });
+}
+
 /** every saved import's song data, oldest first */
 export async function loadImports(): Promise<Song[]> {
   const rows = (await run<{ id: string; song: Song; savedAt: number }[]>([SONGS], 'readonly', tx => tx.objectStore(SONGS).getAll())) ?? [];
