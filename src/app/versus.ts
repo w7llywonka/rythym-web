@@ -224,8 +224,8 @@ async function tick() {
     const sentAt = Date.now();
     const r = game.run;
     try {
-      if (r?.opts?.versus && r.ready && !r.ended && vs.current) {
-        // live score out, opponent's score back, in one request
+      if (r?.opts?.versus && r.ready && !r.ended && vs.current && !vs.current.result) {
+        // live score out, opponent's score back, in one request (until the battle is decided, e.g. they left)
         const res = await api.vsProgress(r.opts.versus.matchId, { score: Math.floor(r.score), combo: r.combo, health: r.health, accuracy: game.accuracyOf(r) });
         if (res.ok && res.data) apply(res.data, sentAt);
         const lead = Math.floor(r.score - vs.current.oppScore);
