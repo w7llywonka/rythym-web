@@ -1,275 +1,535 @@
-import type { Bests, Result, Settings, Song, Stats } from './types';
-import { isBindableKey } from './storage.ts';
-import { generateChart } from './chart';
+// Builds the whole interface as a 1100x640 "stage" that is scaled to fit the window, using the same
+// positions, sizes, colors and type as the Roblox version. Elements are looked up by dotted path: $('home.play').
+import { ACHIEVEMENTS, MOD_INFO, MOD_ORDER, STYLE_CARDS, STYLE_ORDER, T, TAB_ORDER } from './config.ts';
 
-export interface UIActions {
-  play(song: Song): void;
-  preview(song: Song): void;
-  stopPreview(): void;
-  saveSettings(settings: Settings): void;
-  calibrate(): void;
-  resume(): void;
-  restart(): void;
-  quit(): void;
-  importSong?(file: File): void;
+type UD = number | [number, number]; // pixels, or [scale, pixels] like Roblox's UDim
+export interface Opts {
+  x?: UD; y?: UD; w?: UD; h?: UD; ax?: number; ay?: number;
+  bg?: string; bgT?: number; grad?: string; r?: number | 'full'; stroke?: string; strokeW?: number; strokeT?: number;
+  text?: string; html?: string; size?: number; font?: 'black' | 'bold' | 'med'; color?: string; textT?: number;
+  align?: 'left' | 'center' | 'right'; valign?: 'top' | 'center'; wrap?: boolean; truncate?: boolean;
+  clip?: boolean; z?: number; hidden?: boolean; cls?: string; tag?: 'div' | 'button' | 'input'; scroll?: boolean;
 }
 
-const icons = {
-  play: '<path d="m9 5 11 7-11 7V5Z"/>',
-  arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
-  back: '<path d="M19 12H5m6-6-6 6 6 6"/>',
-  settings: '<path d="m9 3-1 3-3 1v3l-2 2 2 2v3l3 1 1 3h6l1-3 3-1v-3l2-2-2-2V7l-3-1-1-3H9Z"/><circle cx="12" cy="12" r="3"/>',
-  sound: '<path d="M4 9h4l5-4v14l-5-4H4V9Zm12-1c3 2 3 6 0 8m3-11c5 4 5 10 0 14"/>',
-  pause: '<path d="M8 5v14M16 5v14"/>',
-  restart: '<path d="M4 11a8 8 0 1 1 2 7M4 4v7h7"/>',
-  close: '<path d="m6 6 12 12M6 18 18 6"/>',
-  trophy: '<path d="M8 4h8v5c0 4-2 6-4 6s-4-2-4-6V4Zm0 2H4v2c0 3 2 4 5 4m7-6h4v2c0 3-2 4-5 4m-3 3v5m-4 0h8"/>',
-  check: '<path d="m5 12 4 4L19 6"/>',
-  headphones: '<path d="M4 14v-3a8 8 0 0 1 16 0v3M4 12h3v8H4v-8Zm13 0h3v8h-3v-8Z"/>',
-};
-const icon = (name: keyof typeof icons) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
-const esc = (value: string) => value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
-const clock = (seconds: number) => `${Math.floor(Math.max(0, seconds) / 60)}:${String(Math.floor(Math.max(0, seconds) % 60)).padStart(2, '0')}`;
-const keyName = (key: string) => key === ' ' ? 'SPACE' : key.replace(/^arrow/i, '').toUpperCase();
-const number = (value: number) => Math.round(value).toLocaleString('en-US');
+const registry = new Map<string, HTMLElement>();
 
-export class UI {
-  private preferences: Settings = { keys: ['f', 'j'], scrollSpeed: 1, offsetMs: 0, volume: 0.7, effects: true };
-  private bests: Bests = {};
-  private selected?: Song;
-  private difficulty: 'Easy' | 'Hard' = 'Easy';
-  private soundEnabled = false;
-  private keyListener?: (event: KeyboardEvent) => void;
-  private animation = 0;
+export function $(path: string): HTMLElement {
+  const el = registry.get(path);
+  if (!el) throw new Error(`UI element not found: ${path}`);
+  return el;
+}
+export const has = (path: string) => registry.has(path);
 
-  constructor(private root: HTMLElement, private songs: Song[], private actions: UIActions) {}
+const ud = (v: UD) => (typeof v === 'number' ? `${v}px` : v[0] === 0 ? `${v[1]}px` : v[1] === 0 ? `${v[0] * 100}%` : `calc(${v[0] * 100}% + ${v[1]}px)`);
 
-  private reset() {
-    this.actions.stopPreview();
-    cancelAnimationFrame(this.animation);
-    if (this.keyListener) window.removeEventListener('keydown', this.keyListener);
-    this.keyListener = undefined;
-    this.root.className = 'app';
-    this.root.classList.toggle('reduced-effects', !this.preferences.effects);
-    this.root.innerHTML = '';
+export function rgba(hex: string, transparency = 0): string {
+  const h = hex.replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${(1 - transparency).toFixed(3)})`;
+}
+
+export function node(parent: HTMLElement, name: string, o: Opts = {}): HTMLElement {
+  const el = document.createElement(o.tag ?? 'div');
+  el.className = 'f' + (o.cls ? ' ' + o.cls : '');
+  const s = el.style;
+  if (o.x !== undefined) s.left = ud(o.x);
+  if (o.y !== undefined) s.top = ud(o.y);
+  if (o.w !== undefined) s.width = ud(o.w);
+  if (o.h !== undefined) s.height = ud(o.h);
+  if (o.ax || o.ay) s.setProperty('--ax', `${-(o.ax ?? 0) * 100}%`), s.setProperty('--ay', `${-(o.ay ?? 0) * 100}%`);
+  if (o.bg) s.backgroundColor = rgba(o.bg, o.bgT ?? 0);
+  if (o.grad) s.backgroundImage = o.grad;
+  if (o.r !== undefined) s.borderRadius = o.r === 'full' ? '9999px' : `${o.r}px`;
+  if (o.stroke) s.boxShadow = `0 0 0 ${o.strokeW ?? 1}px ${rgba(o.stroke, o.strokeT ?? 0)}`;
+  if (o.clip) s.overflow = 'hidden';
+  if (o.scroll) el.classList.add('scroll');
+  if (o.z !== undefined) s.zIndex = String(o.z);
+  if (o.hidden) el.hidden = true;
+  if (o.text !== undefined || o.html !== undefined) {
+    el.classList.add('t', `a-${o.align ?? 'left'}`, `v-${o.valign ?? 'center'}`);
+    if (o.wrap) el.classList.add('wrap');
+    if (o.truncate) el.classList.add('trunc');
+    const size = o.size ?? 18;
+    s.fontSize = `${size}px`;
+    s.fontWeight = o.font === 'black' ? (size >= 40 ? '800' : '700') : o.font === 'med' ? '500' : '600';
+    // ALL-CAPS labels get tracking; big display type gets tightened
+    const caps = !!o.text && /[A-Z]/.test(o.text) && !/[a-z]/.test(o.text);
+    if (size >= 40) s.letterSpacing = '-0.035em';
+    else if (caps) s.letterSpacing = size <= 14 ? '0.08em' : size <= 20 ? '0.05em' : '0.02em';
+    else if (size >= 22) s.letterSpacing = '-0.02em';
+    s.color = rgba(o.color ?? T.text, o.textT ?? 0);
+    const span = document.createElement('span');
+    span.className = 'tx';
+    if (o.html !== undefined) span.innerHTML = o.html; else span.textContent = o.text ?? '';
+    el.appendChild(span);
+  }
+  if (o.tag === 'button') (el as HTMLButtonElement).type = 'button';
+  const parentPath = parent.dataset.path;
+  const path = parentPath ? `${parentPath}.${name}` : name;
+  el.dataset.path = path;
+  registry.set(path, el);
+  parent.appendChild(el);
+  return el;
+}
+
+/** set plain text on a label made by node() */
+export function txt(el: HTMLElement, text: string) {
+  const span = el.querySelector(':scope > .tx') as HTMLElement | null;
+  if (span) { if (span.textContent !== text) span.textContent = text; } else el.textContent = text;
+}
+export function html(el: HTMLElement, markup: string) {
+  const span = el.querySelector(':scope > .tx') as HTMLElement | null;
+  (span ?? el).innerHTML = markup;
+}
+export const show = (el: HTMLElement, on: boolean) => { el.hidden = !on; };
+
+const label = (p: HTMLElement, name: string, o: Opts) => node(p, name, o);
+const frame = (p: HTMLElement, name: string, o: Opts) => node(p, name, o);
+export function button(p: HTMLElement, name: string, o: Opts, style: 'primary' | 'secondary' = 'secondary') {
+  // one restrained button scale: big calls to action 17px, everything else 15px or smaller
+  const size = (o.size ?? 15) >= 24 ? 17 : Math.min(o.size ?? 15, 15);
+  const b = node(p, name, {
+    font: 'black', align: 'center', r: 12, ...o, size, tag: 'button',
+    ...(style === 'primary'
+      ? { bg: T.text, color: T.bg0 }
+      : { bg: o.bg ?? T.bg2, stroke: o.stroke ?? T.line, color: o.color ?? T.text }),
+  });
+  b.classList.add('btn', style);
+  return b;
+}
+
+function toggle(p: HTMLElement, w = 52, h = 28) {
+  const t = node(p, 'toggle', { tag: 'button', ax: 1, ay: 0.5, x: [1, -14], y: [0.5, 0], w: w - 8, h: h - 4, bg: T.bg3, r: 'full', cls: 'toggle' });
+  h -= 4;
+  frame(t, 'knob', { ay: 0.5, x: 3, y: [0.5, 0], w: h - 6, h: h - 6, bg: '#FFFFFF', r: 'full', cls: 'knob' });
+  return t;
+}
+
+function stepper(row: HTMLElement, prefix: string, rightOffset: number, valueWidth: number, size = 40, valueSize = 15) {
+  button(row, prefix + 'minus', { text: '−', size: 16, ax: 1, ay: 0.5, x: [1, -(rightOffset + valueWidth + 8 + size)], y: [0.5, 0], w: size, h: size, r: 10, bg: T.bg1 });
+  label(row, prefix + 'value', { text: '-', font: 'black', size: valueSize, align: 'center', ax: 1, ay: 0.5, x: [1, -(rightOffset + size + 4)], y: [0.5, 0], w: valueWidth, h: 40 });
+  button(row, prefix + 'plus', { text: '+', size: 16, ax: 1, ay: 0.5, x: [1, -rightOffset], y: [0.5, 0], w: size, h: size, r: 10, bg: T.bg1 });
+}
+
+function panel(parent: HTMLElement, name: string, w: number, h: number) {
+  const p = frame(parent, name, { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.5, 0], w, h, bg: T.bg1, r: 20, stroke: T.line, hidden: true, cls: 'panel pop' });
+  button(p, 'close', { text: '✕', size: 14, ax: 1, x: w - 24, y: 24, w: 36, h: 36, r: 10, color: T.muted, cls: 'iconbtn' });
+  return p;
+}
+
+export function buildUI(app: HTMLElement) {
+  app.innerHTML = '';
+  app.dataset.path = '';
+  const backdrop = frame(app, 'backdrop', { cls: 'fill', bg: '#000000' });
+  void backdrop;
+  const root = frame(app, 'root', { cls: 'stage' });
+  root.dataset.path = ''; // screens are addressed directly: 'home.play', 'select.list', ...
+
+  // HOME ---------------------------------------------------------------
+  const home = frame(root, 'home', { cls: 'fill' });
+  const logo = frame(home, 'logo', { ax: 0.5, x: [0.5, 0], y: 92, w: 700, h: 170, cls: 'pop' });
+  label(logo, 'line', { text: 'LINE', font: 'black', size: 116, align: 'right', w: 330, h: 140 });
+  label(logo, 'rush', { text: 'RUSH', font: 'black', size: 116, x: 352, w: 360, h: 140, cls: 'gradtext' });
+  frame(logo, 'bar1', { x: 200, y: 150, w: 140, h: 4, bg: T.cyan, r: 2 });
+  frame(logo, 'bar2', { x: 360, y: 150, w: 140, h: 4, bg: T.pink, r: 2 });
+  label(home, 'tagline', { text: "Two buttons. Real beats. Don't miss.", font: 'med', size: 17, color: T.muted, align: 'center', ax: 0.5, x: [0.5, 0], y: 282, w: 700, h: 26 });
+  button(home, 'play', { text: 'PLAY', size: 30, ax: 0.5, x: [0.5, 0], y: 350, w: 300, h: 64, r: 16 }, 'primary');
+  button(home, 'settings', { text: 'SETTINGS', size: 13, ax: 0.5, x: [0.5, 0], y: 426, w: 300, h: 50, r: 14 });
+  label(home, 'howto', { html: '', font: 'med', size: 14, color: T.muted, align: 'center', wrap: true, ax: 0.5, x: [0.5, 0], y: 492, w: 340, h: 40 });
+  label(home, 'nowplaying', { html: '', font: 'med', size: 14, color: T.dim, align: 'center', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -18], w: 800, h: 20 });
+  const chip = frame(home, 'chip', { x: 30, y: 24, w: 300, h: 64, bg: T.bg1, r: 14, stroke: T.line });
+  label(chip, 'name', { text: 'Player', font: 'black', size: 16, truncate: true, x: 14, y: 8, w: 180, h: 20 });
+  label(chip, 'level', { text: 'LV 1', font: 'black', size: 14, color: T.gold, align: 'right', ax: 1, x: [1, -14], y: 8, w: 90, h: 20 });
+  const xp = frame(chip, 'xp', { x: 14, y: 35, w: 272, h: 4, bg: T.bg3, r: 2, clip: true });
+  frame(xp, 'fill', { w: [0, 0], h: [1, 0], r: 2, bg: T.gold });
+  label(chip, 'streak', { text: '', size: 11, color: T.muted, x: 14, y: 44, w: 272, h: 14, truncate: true });
+  button(home, 'versus', { text: '1V1', size: 13, ax: 1, x: 930, y: 24, w: 90, h: 44 });
+  button(home, 'profile', { text: 'PROFILE', size: 13, ax: 1, x: 1070, y: 24, w: 130, h: 44 });
+
+  const weekly = frame(home, 'weekly', { x: 40, y: 340, w: 320, h: 236, bg: T.bg1, r: 16, stroke: T.line });
+  label(weekly, 'header', { text: 'WEEKLY CHALLENGE', font: 'black', size: 11, color: T.gold, x: 16, y: 14, w: 200, h: 14 });
+  label(weekly, 'ends', { text: '', size: 11, color: T.muted, align: 'right', ax: 1, x: [1, -16], y: 14, w: 120, h: 14 });
+  label(weekly, 'song', { text: '-', font: 'black', size: 20, truncate: true, x: 16, y: 36, w: 288, h: 26 });
+  label(weekly, 'mods', { text: '', size: 12, color: T.muted, x: 16, y: 64, w: 288, h: 16 });
+  label(weekly, 'kinglabel', { text: 'KING OF THE HILL', font: 'black', size: 9, color: T.dim, x: 16, y: 92, w: 200, h: 12 });
+  label(weekly, 'king', { text: 'Nobody yet. Claim it!', size: 14, truncate: true, x: 16, y: 106, w: 288, h: 18 });
+  label(weekly, 'mine', { text: '', font: 'med', size: 12, color: T.muted, x: 16, y: 128, w: 288, h: 16 });
+  button(weekly, 'play', { text: 'PLAY WEEKLY', size: 13, x: 16, y: 172, w: 288, h: 46, color: T.gold });
+
+  const feed = frame(home, 'feed', { x: 740, y: 340, w: 320, h: 236, bg: T.bg1, r: 16, stroke: T.line });
+  label(feed, 'header', { text: 'LIVE FEED', font: 'black', size: 11, color: T.muted, x: 16, y: 14, w: 200, h: 14 });
+  frame(feed, 'dot', { x: 96, y: 18, w: 6, h: 6, bg: T.red, r: 'full', cls: 'livedot' });
+  for (let i = 1; i <= 6; i++) {
+    label(feed, `line${i}`, { html: '', font: 'med', size: 12, wrap: true, valign: 'top', x: 16, y: 36 + (i - 1) * 32, w: 288, h: 30 });
   }
 
-  private remember(settings: Settings, bests: Bests) {
-    this.preferences = { ...settings, keys: [...settings.keys] };
-    this.bests = bests;
-  }
+  // SONG SELECT ---------------------------------------------------------
+  const select = frame(root, 'select', { cls: 'fill', hidden: true });
+  button(select, 'back', { text: '← BACK', size: 13, x: 30, y: 28, w: 110, h: 44 });
+  label(select, 'title', { text: 'Select a song', font: 'black', size: 28, x: 158, y: 28, w: 400, h: 44 });
+  label(select, 'hint', { text: '', font: 'med', size: 13, color: T.muted, x: 400, y: 28, w: 380, h: 44 });
+  button(select, 'settings', { text: 'SETTINGS', size: 13, ax: 1, x: 1070, y: 28, w: 130, h: 44 });
+  button(select, 'import', { text: '+ IMPORT', size: 13, ax: 1, x: 930, y: 28, w: 110, h: 44 });
+  const tabs = frame(select, 'tabs', { x: 30, y: 92, w: 558, h: 46, bg: T.bg1, r: 12, stroke: T.line });
+  frame(tabs, 'highlight', { x: 6, y: 4, w: 106, h: 38, r: 9, cls: 'slide' });
+  TAB_ORDER.forEach((tab, i) => {
+    node(tabs, tab.toLowerCase(), { tag: 'button', text: tab.toUpperCase(), font: 'black', size: 12, align: 'center', color: T.muted, x: 4 + i * 110, y: 0, w: 110, h: 46, cls: 'tab' });
+  });
+  frame(select, 'list', { x: 30, y: 152, w: 570, h: 462, scroll: true });
+  label(select, 'empty', { text: '', size: 18, color: T.muted, align: 'center', wrap: true, x: 30, y: 250, w: 570, h: 80, hidden: true });
 
-  private header(active = '', back?: string) {
-    return `<header class="topbar"><button class="brand" data-action="home" aria-label="Line Rush home"><span class="brand-mark"><i></i><i></i><i></i></span><span>LINE<span>RUSH</span></span></button>${back ? `<button class="back-link" data-action="back">${icon('back')}${back}</button>` : `<nav class="main-nav" aria-label="Main navigation"><button class="${active === 'home' ? 'active' : ''}" data-action="home">Overview</button><button class="${active === 'select' ? 'active' : ''}" data-action="select">Track library<span class="nav-count">${this.songs.length}</span></button></nav>`}<div class="header-right"><span class="local-status"><i></i> LOCAL BESTS SAVED</span><button class="icon-button ${active === 'settings' ? 'active' : ''}" data-action="settings" aria-label="Settings">${icon('settings')}</button></div></header>`;
-  }
+  const detail = frame(select, 'detail', { x: 630, y: 92, w: 440, h: 522, bg: T.bg1, r: 20, stroke: T.line });
+  const cover = frame(detail, 'cover', { x: 20, y: 20, w: 400, h: 100, r: 14 });
+  label(cover, 'genre', { text: 'GENRE', font: 'black', size: 13, textT: 0.15, x: 18, y: 14, w: 300, h: 16 });
+  const pill = frame(cover, 'pill', { x: 18, y: 36, w: 86, h: 24, bg: T.bg0, bgT: 0.35, r: 12 });
+  label(pill, 'text', { text: 'EASY', font: 'black', size: 12, align: 'center', w: [1, 0], h: [1, 0] });
+  label(cover, 'bpmlabel', { text: 'BPM', font: 'black', size: 14, textT: 0.25, x: 18, y: 72, w: 100, h: 18 });
+  label(cover, 'bpm', { text: '120', font: 'black', size: 60, textT: 0.1, align: 'right', ax: 1, ay: 1, x: [1, -18], y: [1, -4], w: 260, h: 70 });
+  label(detail, 'title', { text: 'Song', font: 'black', size: 28, truncate: true, x: 20, y: 132, w: 400, h: 34 });
+  label(detail, 'artist', { text: 'Artist', font: 'med', size: 15, color: T.muted, x: 20, y: 166, w: 400, h: 20 });
+  label(detail, 'pack', { text: '', font: 'black', size: 11, color: T.muted, align: 'right', x: 20, y: 168, w: 400, h: 16 });
+  const stats = frame(detail, 'stats', { x: 20, y: 194, w: 400, h: 56 });
+  ['bpm', 'length', 'notes', 'level'].forEach((nm, i) => {
+    const box = frame(stats, nm, { x: i * 103, y: 0, w: 91, h: 56, r: 10, stroke: T.line });
+    label(box, 'value', { text: '-', font: 'black', size: 19, align: 'center', x: 0, y: 9, w: 91, h: 24 });
+    label(box, 'label', { text: nm.toUpperCase(), size: 10, color: T.muted, align: 'center', x: 0, y: 33, w: 91, h: 14 });
+  });
+  const chartRow = frame(detail, 'chartrow', { x: 20, y: 262, w: 400, h: 40 });
+  button(chartRow, 'base', { text: 'EASY', size: 14, x: 0, y: 0, w: 196, h: 40, r: 10 });
+  button(chartRow, 'plus', { text: 'HARD +', size: 14, x: 204, y: 0, w: 196, h: 40, r: 10 });
+  const best = frame(detail, 'best', { x: 20, y: 312, w: 400, h: 84, bg: T.bg2, r: 12 });
+  label(best, 'header', { text: 'PERSONAL BEST', font: 'black', size: 10, color: T.muted, x: 16, y: 10, w: 200, h: 14 });
+  button(best, 'top', { text: 'TOP 10 →', size: 10, x: 130, y: 6, w: 80, h: 22, r: 8, bg: T.bg1 });
+  label(best, 'score', { text: '-', font: 'black', size: 26, x: 16, y: 26, w: 260, h: 30 });
+  label(best, 'info', { text: '', font: 'med', size: 14, color: T.muted, x: 16, y: 58, w: 270, h: 18 });
+  label(best, 'grade', { text: '-', font: 'black', size: 46, color: T.dim, align: 'right', ax: 1, x: [1, -18], y: 6, w: 100, h: 52 });
+  const fc = frame(best, 'fc', { ax: 1, x: [1, -16], y: 58, w: 98, h: 18, bg: T.gold, r: 10, hidden: true });
+  label(fc, 'text', { text: 'FULL COMBO', font: 'black', size: 11, color: T.bg0, align: 'center', w: [1, 0], h: [1, 0] });
+  const sb = button(detail, 'style', { text: '', x: 20, y: 406, w: 400, h: 40, r: 10 });
+  label(sb, 'label', { text: 'STYLE', font: 'black', size: 10, color: T.muted, x: 16, y: 0, w: 60, h: 40 });
+  label(sb, 'value', { text: 'CLASSIC', font: 'black', size: 13, truncate: true, x: 70, y: 0, w: 230, h: 40 });
+  label(sb, 'mult', { text: 'x1.00  >', font: 'black', size: 13, color: T.gold, align: 'right', ax: 1, x: [1, -16], y: 0, w: 100, h: 40 });
+  button(detail, 'play', { text: 'PLAY', size: 26, x: 20, y: 456, w: 400, h: 50, r: 16 }, 'primary');
 
-  private footer() {
-    return `<footer class="page-footer"><span><i class="live-dot"></i> FIND YOUR FLOW</span><canvas id="spectrum" aria-hidden="true"></canvas><span>BUILT FOR THE BEAT <b>↗</b></span></footer>`;
+  // GAME ---------------------------------------------------------------
+  const game = frame(root, 'game', { cls: 'fill', hidden: true });
+  const pf = frame(game, 'pf', { ax: 0.5, x: [0.5, 0], y: 20, w: 344, h: 600, bg: T.bg1, r: 20, cls: 'pf' });
+  for (const i of [1, 2]) {
+    const color = i === 1 ? T.cyan : T.pink;
+    const lane = frame(pf, `lane${i}`, { x: i === 1 ? 12 : 176, y: 12, w: 156, h: 576, r: 14, clip: true, cls: 'lane' });
+    frame(lane, 'beam', { cls: 'fill beam', grad: `linear-gradient(180deg, ${rgba(color, 1)} 0%, ${rgba(color, 0.85)} 55%, ${rgba(color, 0)} 100%)` }).style.opacity = '0';
+    // lit while the key is held down
+    frame(lane, 'held', { cls: 'fill beam heldbeam', grad: `linear-gradient(180deg, ${rgba(color, 1)} 0%, ${rgba(color, 0.9)} 60%, ${rgba(color, 0.6)} 100%)` });
+    const rec = node(lane, 'rec', { tag: 'button', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -14], w: 132, h: 104, bg: T.bg1, r: 16, stroke: color, strokeW: 2, cls: 'rec pop' });
+    frame(rec, 'glow', { cls: 'fill', bg: color, r: 16 }).style.opacity = '0';
+    frame(rec, 'heldglow', { cls: 'fill heldglow', bg: color, r: 16 });
+    frame(rec, 'target', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.5, 0], w: [1, -20], h: 4, bg: color, bgT: 0.3, r: 2 });
+    label(rec, 'key', { text: i === 1 ? 'F' : 'J', font: 'black', size: 26, align: 'center', ax: 0.5, x: [0.5, 0], y: 10, w: [1, -20], h: 32 });
+    label(rec, 'name', { text: `BUTTON ${i}`, size: 10, color: T.muted, align: 'center', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -10], w: [1, 0], h: 14 });
+    // hit zone: where Good / Great / Perfect count (sized per run from the timing windows), drawn over the button
+    const zone = frame(lane, 'zone', { cls: 'fill nopointer', z: 3 });
+    for (const [nm, c] of [['good', T.green], ['great', T.cyan], ['perfect', T.gold]] as const) {
+      frame(zone, nm, { ax: 0.5, ay: 0.5, x: [0.5, 0], y: 510, w: [1, -6], h: 0, bg: c, r: 6, cls: `zoneband ${nm}` });
+    }
+    frame(zone, 'line', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: 510, w: [1, 0], h: 2, bg: '#FFFFFF', cls: 'hitline' });
+    frame(lane, 'notes', { cls: 'fill nopointer', z: 4 });
   }
+  frame(pf, 'flashlight', { cls: 'fill', hidden: true, grad: 'linear-gradient(180deg, #000 0%, #000 50%, rgba(0,0,0,0) 72%)', r: 20 });
+  frame(pf, 'effects', { cls: 'fill nopointer' });
+  const combo = frame(pf, 'combo', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.3, 0], w: 300, h: 110, cls: 'pop nopointer' });
+  label(combo, 'value', { text: '', font: 'black', size: 72, textT: 0.55, align: 'center', w: 300, h: 80 });
+  label(combo, 'label', { text: 'COMBO', font: 'black', size: 14, textT: 0.6, align: 'center', x: 0, y: 78, w: 300, h: 18, hidden: true });
+  label(pf, 'judgment', { text: '', font: 'black', size: 38, align: 'center', ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.58, 0], w: 320, h: 46, cls: 'pop nopointer stroked' });
+  label(pf, 'timing', { text: '', size: 14, align: 'center', ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.58, 30], w: 320, h: 18, cls: 'nopointer' });
+  label(pf, 'countdown', { text: '', font: 'black', size: 110, align: 'center', ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.42, 0], w: 340, h: 130, cls: 'pop nopointer stroked' });
 
-  private bindNavigation(back: () => void = () => this.home(this.preferences, this.bests)) {
-    this.root.querySelectorAll<HTMLElement>('[data-action="home"]').forEach((b) => b.onclick = () => this.home(this.preferences, this.bests));
-    this.root.querySelectorAll<HTMLElement>('[data-action="select"]').forEach((b) => b.onclick = () => this.select(this.preferences, this.bests));
-    this.root.querySelectorAll<HTMLElement>('[data-action="settings"]').forEach((b) => b.onclick = () => this.settings(this.preferences, this.bests));
-    this.root.querySelectorAll<HTMLElement>('[data-action="back"]').forEach((b) => b.onclick = back);
-  }
+  const health = frame(game, 'health', { x: 738, y: 20, w: 6, h: 600, bg: T.bg2, r: 3, clip: true });
+  frame(health, 'fill', { ay: 1, x: 0, y: [1, 0], w: [1, 0], h: [1, 0], bg: T.green, r: 3, cls: 'anchor-bottom' });
 
-  home(settings: Settings, bests: Bests) {
-    this.remember(settings, bests);
-    this.reset();
-    const featured = this.songs[0];
-    this.root.innerHTML = `${this.header('home')}<main class="home-main"><div class="hero-copy"><div class="eyebrow"><span class="mini-bars"><i></i><i></i><i></i></span> TWO KEYS. ONE RHYTHM.</div><h1 class="hero-title">LINE<br><span>RUSH<span class="title-period">.</span></span></h1><p class="hero-description">Less thinking.<br>More <em>feeling the beat.</em></p><p class="hero-detail">Two lanes. Ten tracks. One perfect moment.<br>Hit the line, chase the combo, find your flow.</p><div class="hero-actions"><button class="button primary big" data-action="select">LET'S PLAY ${icon('arrow')}</button><button class="button secondary big" data-action="settings">${icon('settings')} Settings</button></div><div class="how-to"><span class="keycap cyan">${esc(keyName(settings.keys[0]))}</span><span class="keycap pink">${esc(keyName(settings.keys[1]))}</span><span>Press when the lines meet the target.<br><b>Click or tap works, too.</b></span></div></div><div class="hero-visual" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="hero-top-tag"><i></i> IN THE ZONE <span>×4</span></div><div class="hero-playfield"><div class="lane-label"><span>01 / LOW</span><span>02 / HIGH</span></div><div class="demo-lanes"><div class="demo-lane"><i class="demo-note cyan n1"></i><i class="demo-note cyan n2"></i><i class="demo-note gold n3"></i><i class="demo-note cyan n4"></i></div><div class="demo-lane"><i class="demo-note pink n5"></i><i class="demo-note gold n3"></i><i class="demo-note pink n6"></i><i class="demo-note pink n7"></i></div><div class="demo-combo"><span>PERFECT</span><strong>128</strong><span>COMBO</span></div><div class="demo-target"><span></span><span></span></div><div class="demo-keys"><b>${esc(keyName(settings.keys[0]))}</b><b>${esc(keyName(settings.keys[1]))}</b></div></div></div><div class="floating-stat"><span class="float-icon">${icon('trophy')}</span><span>THE NEXT PERFECT RUN<br><b>Could be yours.</b></span><span>↗</span></div><div class="hero-coordinate">SYNC / LOCKED<br>120.00 BPM</div></div></main><section class="home-bottom"><div class="track-preview">${featured ? this.cover(featured, 'tiny') : ''}<div><span class="small-label">ON THE DECK</span><strong>${featured ? esc(featured.title) : 'Ready when you are'}</strong><span>${featured ? esc(featured.artist) + ' · ' + featured.bpm + ' BPM' : 'Pick a track to begin'}</span></div><button class="sound-button" id="enable-sound">${icon('sound')}<span>${this.soundEnabled ? 'SOUND ON' : 'ENABLE SOUND'}</span></button></div><div class="home-facts"><div><strong>02</strong><span>LANES</span></div><div><strong>10</strong><span>ORIGINAL TRACKS</span></div><div><strong>∞</strong><span>ONE MORE TRY</span></div></div></section>${this.footer()}`;
-    this.bindNavigation();
-    this.root.querySelector<HTMLButtonElement>('#enable-sound')!.onclick = () => {
-      if (featured) this.actions.preview(featured);
-      this.soundEnabled = true;
-      this.root.querySelector('#enable-sound span')!.textContent = 'SOUND ON';
-    };
-    if (this.soundEnabled && featured) this.actions.preview(featured);
-  }
+  const left = frame(game, 'left', { x: 40, y: 20, w: 330, h: 600 });
+  button(left, 'pause', { text: '❚❚', size: 11, x: 0, y: 10, w: 48, h: 48 });
+  label(left, 'title', { text: 'Song', font: 'black', size: 26, truncate: true, x: 0, y: 86, w: 320, h: 32 });
+  label(left, 'artist', { text: 'Artist', font: 'med', size: 15, color: T.muted, x: 0, y: 118, w: 320, h: 20 });
+  const dp = frame(left, 'pill', { x: 0, y: 148, w: 86, h: 24, bg: T.green, r: 8 });
+  label(dp, 'text', { text: 'EASY', font: 'black', size: 11, color: T.bg0, align: 'center', w: [1, 0], h: [1, 0] });
+  label(left, 'style', { text: '', font: 'black', size: 11, color: T.muted, truncate: true, x: 98, y: 148, w: 230, h: 24 });
+  const prog = frame(left, 'progress', { x: 0, y: 192, w: 300, h: 4, bg: T.bg2, r: 2, clip: true });
+  frame(prog, 'fill', { w: [0, 0], h: [1, 0], r: 2, bg: T.text });
+  label(left, 'time', { text: '0:00 / 0:00', size: 13, color: T.muted, x: 0, y: 204, w: 300, h: 16 });
+  const vs = frame(left, 'versus', { x: 0, y: 240, w: 320, h: 150, bg: T.bg1, r: 14, stroke: T.line, hidden: true });
+  label(vs, 'label', { text: 'VS', font: 'black', size: 12, color: T.pink, x: 14, y: 10, w: 40, h: 14 });
+  label(vs, 'opponent', { text: 'Opponent', font: 'black', size: 16, x: 14, y: 26, w: 200, h: 20 });
 
-  private cover(song: Song, size = '') {
-    const shape = song.seed % 4;
-    return `<div class="track-cover ${size} cover-${shape}" style="--cover-a:${song.color};--cover-b:${song.color2}"><svg viewBox="0 0 200 200" aria-hidden="true"><defs><linearGradient id="cover-${esc(song.id)}-${size}" x2="1" y2="1"><stop stop-color="${song.color}"/><stop offset="1" stop-color="${song.color2}"/></linearGradient></defs><rect width="200" height="200" fill="url(#cover-${esc(song.id)}-${size})"/><circle cx="100" cy="100" r="70" fill="none" stroke="#080d20" stroke-width="30" opacity=".65"/><circle cx="100" cy="100" r="35" fill="none" stroke="#fff" stroke-width="2" opacity=".8"/><path d="m-20 150 110-140 35 115 80-125M-15 170 95 30l35 115L210 20" fill="none" stroke="#fff" stroke-width="8" opacity=".75"/><circle cx="100" cy="100" r="8" fill="#080d20"/></svg><span>LR / ${String(this.songs.indexOf(song) + 1).padStart(2, '0')}</span></div>`;
-  }
+  const right = frame(game, 'right', { x: 770, y: 20, w: 290, h: 600 });
+  label(right, 'score', { text: '0', font: 'black', size: 46, align: 'right', x: 0, y: 10, w: 290, h: 52 });
+  label(right, 'accuracy', { text: '100.00%', font: 'black', size: 22, color: T.muted, align: 'right', x: 0, y: 62, w: 290, h: 28 });
+  const mult = frame(right, 'mult', { ax: 1, x: 290, y: 100, w: 52, h: 24, bg: T.bg2, r: 8, stroke: T.line });
+  label(mult, 'text', { text: 'x1', font: 'black', size: 12, align: 'center', w: [1, 0], h: [1, 0] });
+  const counts = frame(right, 'counts', { x: 110, y: 150, w: 180, h: 120 });
+  [['perfect', T.gold], ['great', T.cyan], ['good', T.green], ['miss', T.red]].forEach(([nm, color], i) => {
+    const row = frame(counts, nm, { x: 0, y: i * 28, w: 180, h: 24 });
+    label(row, 'name', { text: nm.toUpperCase(), font: 'black', size: 11, color, w: 100, h: 24 });
+    label(row, 'value', { text: '0', font: 'black', size: 15, align: 'right', w: 180, h: 24 });
+  });
+  const meter = frame(right, 'timing', { x: 110, y: 278, w: 180, h: 52 });
+  label(meter, 'label', { text: 'TIMING', font: 'black', size: 10, color: T.muted, w: 100, h: 14 });
+  label(meter, 'avg', { text: '', size: 11, color: T.muted, align: 'right', w: 180, h: 14 });
+  const bar = frame(meter, 'bar', { x: 0, y: 20, w: 180, h: 12, bg: T.bg2, r: 6, clip: true });
+  frame(bar, 'good', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.5, 0], w: [1, 0], h: [0.5, 0], bg: T.green, bgT: 0.7 });
+  frame(bar, 'great', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.5, 0], w: [0.6, 0], h: [0.5, 0], bg: T.cyan, bgT: 0.6 });
+  frame(bar, 'perfect', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.5, 0], w: [0.3, 0], h: [0.5, 0], bg: T.gold, bgT: 0.45 });
+  frame(bar, 'center', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.5, 0], w: 2, h: [1, 0], bg: '#FFFFFF' });
+  frame(bar, 'ticks', { cls: 'fill' });
+  label(meter, 'legend', { text: 'EARLY                              LATE', size: 9, color: T.dim, x: 0, y: 38, w: 180, h: 12, cls: 'pre' });
+  const sideCombo = frame(right, 'sidecombo', { x: 40, y: 350, w: 250, h: 76, cls: 'pop' });
+  label(sideCombo, 'label', { text: 'COMBO', font: 'black', size: 12, color: T.muted, align: 'right', w: 250, h: 14, hidden: true });
+  label(sideCombo, 'value', { text: '', font: 'black', size: 52, align: 'right', x: 0, y: 14, w: 250, h: 58 });
+  label(right, 'sidejudgment', { text: '', font: 'black', size: 30, align: 'right', x: 40, y: 436, w: 250, h: 36, cls: 'pop' });
+  label(right, 'sidetiming', { text: '', size: 13, align: 'right', x: 40, y: 472, w: 250, h: 18 });
 
-  select(settings: Settings, bests: Bests, selectedId?: string) {
-    this.remember(settings, bests);
-    this.reset();
-    if (selectedId) this.selected = this.songs.find((song) => song.id === selectedId);
-    if (this.selected) this.difficulty = this.selected.difficulty;
-    this.selected = this.selected ?? this.songs.find((song) => song.difficulty === this.difficulty) ?? this.songs[0];
-    this.renderSelect();
-    if (this.selected) this.actions.preview(this.selected);
-  }
+  // RESULTS ------------------------------------------------------------
+  const results = frame(root, 'results', { cls: 'fill', hidden: true });
+  const rp = frame(results, 'panel', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.5, 0], w: 860, h: 610, bg: T.bg1, r: 24, stroke: T.line, cls: 'pop panel' });
+  label(rp, 'versus', { html: '', font: 'black', size: 22, align: 'center', wrap: true, x: 40, y: 30, w: 300, h: 50 });
+  const gc = frame(rp, 'circle', { ax: 0.5, ay: 0.5, x: 190, y: 200, w: 230, h: 230, bg: T.bg2, r: 'full', stroke: T.gold, strokeW: 3, cls: 'pop' });
+  label(gc, 'grade', { text: 'S', font: 'black', size: 150, align: 'center', w: [1, 0], h: [1, 0] });
+  label(rp, 'status', { text: 'CLEARED', font: 'black', size: 18, align: 'center', x: 40, y: 344, w: 300, h: 30 });
+  const nb = frame(rp, 'newbest', { ax: 0.5, x: 190, y: 380, w: 130, h: 26, bg: T.gold, r: 8, hidden: true });
+  label(nb, 'text', { text: 'NEW BEST!', font: 'black', size: 12, color: T.bg0, align: 'center', w: [1, 0], h: [1, 0] });
+  label(rp, 'avg', { text: '', size: 13, color: T.muted, align: 'center', wrap: true, x: 40, y: 414, w: 300, h: 34 });
+  label(rp, 'title', { text: 'Song', font: 'black', size: 28, truncate: true, x: 380, y: 34, w: 440, h: 36 });
+  label(rp, 'info', { text: '', size: 14, color: T.muted, truncate: true, x: 380, y: 72, w: 440, h: 18 });
+  label(rp, 'scorelabel', { text: 'SCORE', font: 'black', size: 10, color: T.muted, x: 380, y: 110, w: 200, h: 14 });
+  label(rp, 'xp', { text: '', font: 'black', size: 14, color: T.gold, align: 'right', ax: 1, x: 820, y: 110, w: 300, h: 16 });
+  label(rp, 'score', { text: '0', font: 'black', size: 54, x: 378, y: 124, w: 440, h: 60 });
+  ['accuracy', 'maxcombo'].forEach((nm, i) => {
+    const box = frame(rp, nm, { x: 380 + i * 226, y: 196, w: 214, h: 70, r: 12, stroke: T.line });
+    label(box, 'label', { text: nm === 'maxcombo' ? 'MAX COMBO' : 'ACCURACY', font: 'black', size: 10, color: T.muted, x: 16, y: 12, w: 180, h: 14 });
+    label(box, 'value', { text: '-', font: 'black', size: 28, x: 16, y: 28, w: 190, h: 32 });
+  });
+  const bd = frame(rp, 'breakdown', { x: 380, y: 284, w: 440, h: 120 });
+  [['perfect', T.gold], ['great', T.cyan], ['good', T.green], ['miss', T.red]].forEach(([nm, color], i) => {
+    const row = frame(bd, nm, { x: 0, y: i * 30, w: 440, h: 24 });
+    label(row, 'name', { text: nm.toUpperCase(), font: 'black', size: 11, color, w: 90, h: 24 });
+    const b = frame(row, 'bar', { x: 96, y: 10, w: 270, h: 4, bg: T.bg2, r: 2, clip: true });
+    frame(b, 'fill', { w: [0, 0], h: [1, 0], bg: color, r: 2, cls: 'grow' });
+    label(row, 'value', { text: '0', font: 'black', size: 16, align: 'right', w: 440, h: 24 });
+  });
+  const graph = frame(rp, 'graph', { x: 40, y: 458, w: 780, h: 66, r: 12, stroke: T.line, clip: true });
+  label(graph, 'label', { text: 'HEALTH', font: 'black', size: 9, color: T.dim, x: 10, y: 4, w: 100, h: 12 });
+  frame(graph, 'bars', { x: 8, y: 6, w: [1, -16], h: [1, -10] });
+  button(rp, 'retry', { text: 'RETRY', size: 18, x: 380, y: 538, w: 200, h: 56 });
+  button(rp, 'continue', { text: 'CONTINUE', size: 20, x: 596, y: 538, w: 224, h: 56 }, 'primary');
 
-  private renderSelect() {
-    const selected = this.selected;
-    if (!selected) return this.error('No tracks were found.');
-    const best = this.bests[selected.id];
-    const tracks = this.songs.filter((song) => song.difficulty === this.difficulty);
-    const easyCount = String(this.songs.filter(song => song.difficulty === 'Easy').length).padStart(2, '0');
-    const hardCount = String(this.songs.filter(song => song.difficulty === 'Hard').length).padStart(2, '0');
-    const analyzedNotes = generateChart(selected).length;
-    this.root.innerHTML = `${this.header('select')}<main class="select-main"><div class="section-heading"><div><div class="eyebrow">THE TRACK LIBRARY</div><h1>Pick your <span>pulse.</span></h1><p>Find a track. Feel the rhythm. Make it yours.</p></div><div class="library-total"><strong>${this.songs.length}</strong><span>TRACKS<br>ZERO SKIPS</span></div></div><div class="library-layout"><section class="track-list-panel"><div class="library-toolbar"><div class="difficulty-tabs" role="tablist" aria-label="Difficulty"><button role="tab" aria-selected="${this.difficulty === 'Easy'}" class="${this.difficulty === 'Easy' ? 'active' : ''}" data-difficulty="Easy">Easy <span>${easyCount}</span></button><button role="tab" aria-selected="${this.difficulty === 'Hard'}" class="${this.difficulty === 'Hard' ? 'active' : ''}" data-difficulty="Hard">Hard <span>${hardCount}</span></button></div><span class="small-label">${this.difficulty === 'Easy' ? 'EASE INTO THE FLOW' : 'TURN UP THE CHALLENGE'}</span></div><div class="track-list">${tracks.map((song, index) => `<button class="track-card ${song.id === selected.id ? 'selected' : ''}" data-song="${esc(song.id)}" aria-pressed="${song.id === selected.id}"><span class="track-number">${String(index + 1).padStart(2, '0')}</span>${this.cover(song, 'small')}<span class="track-info"><strong>${esc(song.title)}</strong><span>${esc(song.artist)} <i>·</i> ${esc(song.genre)}</span></span><span class="track-bpm"><b>${song.bpm}</b><span>BPM</span></span><span class="track-level">LV. <b>${String(song.level).padStart(2, '0')}</b></span><span class="track-grade ${this.bests[song.id] ? 'has-best' : ''}">${this.bests[song.id]?.grade ?? '—'}</span>${song.id === selected.id ? `<span class="playing-bars"><i></i><i></i><i></i></span>` : `<span class="track-arrow">↗</span>`}</button>`).join('')}</div><div class="library-note">${icon('headphones')} Select any track to hear a preview. <span>HEADPHONES RECOMMENDED</span></div>${this.customUpload()}</section><aside class="song-detail"><div class="detail-cover-wrap">${this.cover(selected, 'large')}<span class="cover-difficulty">${selected.difficulty.toUpperCase()} / LEVEL ${String(selected.level).padStart(2, '0')}</span><span class="cover-preview"><i></i> PREVIEW</span></div><div class="detail-content"><span class="small-label">${esc(selected.genre.toUpperCase())}</span><h2>${esc(selected.title)}</h2><p>${esc(selected.artist)}</p><div class="song-metrics"><div><strong>${selected.bpm}</strong><span>BPM</span></div><div><strong>${clock(selected.duration)}</strong><span>LENGTH</span></div><div><strong>${analyzedNotes || Math.round(selected.duration * selected.bpm / 120)}</strong><span>NOTES</span></div></div><div class="personal-best"><div class="best-title">${icon('trophy')} PERSONAL BEST ${best?.fullCombo ? '<span class="fc-tag">FULL COMBO</span>' : ''}</div>${best ? `<div class="best-values"><div><strong>${number(best.score)}</strong><span>SCORE</span></div><div><strong>${best.accuracy.toFixed(1)}<small>%</small></strong><span>ACCURACY</span></div><div><strong>${best.maxCombo}</strong><span>COMBO</span></div></div>` : '<p class="no-best">A blank slate. Leave your mark.</p>'}</div><button class="button primary play-track" id="play-song">${icon('play')} PLAY TRACK <span>${esc(keyName(this.preferences.keys[0]))} + ${esc(keyName(this.preferences.keys[1]))}</span></button></div></aside></div></main>${this.footer()}`;
-    this.bindNavigation();
-    this.root.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((button) => button.onclick = () => {
-      this.difficulty = button.dataset.difficulty as 'Easy' | 'Hard';
-      this.selected = this.songs.find((song) => song.difficulty === this.difficulty);
-      this.renderSelect();
-      if (this.selected) this.actions.preview(this.selected);
-    });
-    this.root.querySelectorAll<HTMLButtonElement>('[data-song]').forEach((button) => button.onclick = () => {
-      this.selected = this.songs.find((song) => song.id === button.dataset.song)!;
-      this.soundEnabled = true;
-      this.renderSelect();
-      this.actions.preview(this.selected!);
-    });
-    this.root.querySelector<HTMLButtonElement>('#play-song')!.onclick = () => this.actions.play(selected);
-    const importInput = this.root.querySelector<HTMLInputElement>('#import-audio');
-    this.root.querySelector<HTMLButtonElement>('#import-track')?.addEventListener('click', () => importInput?.click());
-    importInput?.addEventListener('change', () => {
-      const file = importInput.files?.[0];
-      if (file) this.actions.importSong?.(file);
-    });
-  }
+  // OVERLAY ------------------------------------------------------------
+  frame(app, 'dimmer', { cls: 'fill dimmer', bg: '#000000', hidden: true });
+  const overlay = frame(app, 'overlay', { cls: 'stage nopointer-self' });
+  overlay.dataset.path = ''; // panels are addressed directly: 'settings', 'pause.resume', ...
 
-  private customUpload() {
-    return `<section class="custom-import"><span class="custom-import-icon">${icon('sound')}</span><div class="custom-import-copy"><h3>Your track. Your rush.</h3><p>Choose an audio file from your device. An extra-hard chart is made from its beats. Audio stays on this device for this session.</p><span>ON YOUR PLAYLIST: <b>Waste My Time — kevinhilfiger</b></span></div><button id="import-track" class="button secondary">IMPORT YOUR TRACK <span>+</span></button><input id="import-audio" class="visually-hidden" type="file" accept="audio/*" aria-label="Import an audio file"></section>`;
-  }
+  const pause = panel(overlay, 'pause', 400, 340);
+  $('pause.close').hidden = true;
+  label(pause, 'title', { text: 'Paused', font: 'black', size: 30, align: 'center', x: 0, y: 30, w: 400, h: 40 });
+  button(pause, 'resume', { text: 'RESUME', size: 20, x: 40, y: 96, w: 320, h: 58 }, 'primary');
+  button(pause, 'restart', { text: 'RESTART', size: 16, x: 40, y: 170, w: 320, h: 50 });
+  button(pause, 'quit', { text: 'QUIT TO SONGS', size: 16, x: 40, y: 234, w: 320, h: 50 });
 
-  settings(settings: Settings, bests: Bests) {
-    this.remember(settings, bests);
-    this.reset();
-    this.root.innerHTML = `${this.header('settings', 'Back to the flow')}<main class="settings-main"><div class="section-heading"><div><div class="eyebrow">MAKE IT FEEL RIGHT</div><h1>Your game.<br><span>Your rhythm.</span></h1><p>Fine-tune the little things. Find your perfect timing.</p></div><span class="settings-heading-icon">${icon('settings')}</span></div><div class="settings-layout"><section class="settings-card"><div class="setting-row keybind-row"><div><span class="setting-index">01</span><h2>Your two keys</h2><p>Click a key, then press its replacement.<br>Choosing the other key swaps the pair.</p></div><div class="keybinds"><div><button id="key-0" class="bind-key cyan">${esc(keyName(settings.keys[0]))}</button><span>LEFT LANE</span></div><div><button id="key-1" class="bind-key pink">${esc(keyName(settings.keys[1]))}</button><span>RIGHT LANE</span></div></div></div><p id="keybind-message" class="keybind-message" role="status">Escape is reserved for pause. / is reserved for shortcuts.</p>${this.slider('speed', '02', 'Scroll speed', 'How fast the lines fall. Timing stays the same.', settings.scrollSpeed, 0.5, 3, 0.1, settings.scrollSpeed.toFixed(1) + '×', '0.5×', '3.0×')}${this.slider('offset', '03', 'Audio offset', 'Negative values make notes arrive earlier.', settings.offsetMs, -300, 300, 5, (settings.offsetMs > 0 ? '+' : '') + settings.offsetMs + ' ms', '−300 ms', '+300 ms')}${this.slider('volume', '04', 'Music volume', 'A little room for the rest of the world.', settings.volume, 0, 1, 0.01, Math.round(settings.volume * 100) + '%', '0%', '100%')}<div class="setting-row effects-row"><div><span class="setting-index">05</span><h2>Visual effects</h2><p>Hit sparks, lane flashes, and a little extra energy.</p></div><button id="effects-toggle" class="toggle ${settings.effects ? 'on' : ''}" role="switch" aria-checked="${settings.effects}" aria-label="Visual effects"><span></span></button></div></section><aside class="settings-aside"><div class="calibration-card"><span class="aside-icon">${icon('headphones')}</span><div class="eyebrow">IN PERFECT SYNC</div><h2>Trust your ears. <span>Then tap.</span></h2><p>Every device is a little different. Tap along to a beat and we'll help you find your audio offset.</p><button class="button secondary" id="calibrate">Calibrate timing ${icon('arrow')}</button><span class="calibration-time">TAKES ABOUT 15 SECONDS</span></div><div class="save-note"><span>${icon('check')}</span><div><strong>Saved as you go.</strong><p>Your settings and records stay in this browser.</p></div></div><button class="reset-settings" id="reset-settings">${icon('restart')} Reset to defaults</button></aside></div></main>${this.footer()}`;
-    this.bindNavigation();
-    const save = () => this.actions.saveSettings({ ...this.preferences, keys: [...this.preferences.keys] });
-    [0, 1].forEach((lane) => this.root.querySelector<HTMLButtonElement>(`#key-${lane}`)!.onclick = () => {
-      if (this.keyListener) window.removeEventListener('keydown', this.keyListener);
-      this.root.querySelectorAll('.bind-key').forEach((b, index) => { b.textContent = keyName(this.preferences.keys[index]); b.classList.remove('listening'); });
-      const button = this.root.querySelector<HTMLButtonElement>(`#key-${lane}`)!;
-      button.textContent = '…';
-      button.classList.add('listening');
-      this.root.querySelector('#keybind-message')!.textContent = 'Press a key to bind it. Escape or / will cancel.';
-      this.keyListener = (event) => {
-        event.preventDefault();
-        if (event.repeat) return;
-        const chosen = event.key.toLowerCase();
-        if (isBindableKey(chosen)) {
-          const other = lane === 0 ? 1 : 0;
-          if (chosen === this.preferences.keys[other]) this.preferences.keys[other] = this.preferences.keys[lane];
-          this.preferences.keys[lane] = chosen;
-          save();
-        }
-        if (this.keyListener) window.removeEventListener('keydown', this.keyListener);
-        this.keyListener = undefined;
-        this.root.querySelectorAll('.bind-key').forEach((b, index) => { b.textContent = keyName(this.preferences.keys[index]); b.classList.remove('listening'); });
-        this.root.querySelector('#keybind-message')!.textContent = 'Escape is reserved for pause. / is reserved for shortcuts.';
-      };
-      window.addEventListener('keydown', this.keyListener);
-    });
-    const sliders: [string, keyof Settings][] = [['speed', 'scrollSpeed'], ['offset', 'offsetMs'], ['volume', 'volume']];
-    sliders.forEach(([id, field]) => this.root.querySelector<HTMLInputElement>(`#${id}`)!.oninput = (event) => {
-      const value = Number((event.target as HTMLInputElement).value);
-      if (field === 'scrollSpeed' || field === 'offsetMs' || field === 'volume') this.preferences[field] = value;
-      this.root.querySelector(`#${id}-value`)!.textContent = id === 'speed' ? value.toFixed(1) + '×' : id === 'volume' ? Math.round(value * 100) + '%' : (value > 0 ? '+' : '') + value + ' ms';
-      save();
-    });
-    this.root.querySelector<HTMLButtonElement>('#effects-toggle')!.onclick = (event) => {
-      this.preferences.effects = !this.preferences.effects;
-      const toggle = event.currentTarget as HTMLButtonElement;
-      toggle.classList.toggle('on', this.preferences.effects);
-      toggle.setAttribute('aria-checked', String(this.preferences.effects));
-      save();
-    };
-    this.root.querySelector<HTMLButtonElement>('#calibrate')!.onclick = () => this.actions.calibrate();
-    this.root.querySelector<HTMLButtonElement>('#reset-settings')!.onclick = () => {
-      this.preferences = { keys: ['f', 'j'], scrollSpeed: 1, offsetMs: 0, volume: 0.7, effects: true };
-      save();
-      this.settings(this.preferences, this.bests);
-    };
-  }
+  // settings
+  const st = panel(overlay, 'settings', 660, 610);
+  label(st, 'title', { text: 'Settings', font: 'black', size: 26, x: 32, y: 26, w: 400, h: 36 });
+  const header = (p: HTMLElement, name: string, text: string, y: number) =>
+    label(p, name, { text, font: 'black', size: 10, color: T.muted, x: 32, y, w: 300, h: 14 });
+  header(st, 'h1', 'CONTROLS', 84);
+  [T.cyan, T.pink, T.text].forEach((color, i) => {
+    const row = frame(st, `key${i + 1}`, { x: 32 + i * 202, y: 106, w: 192, h: 60, bg: T.bg2, r: 12 });
+    frame(row, 'dot', { ay: 0.5, x: 16, y: [0.5, 0], w: 12, h: 12, bg: color, r: 'full' });
+    label(row, 'label', { text: ['Button 1', 'Button 2', 'Restart'][i], size: 15, x: 34, y: 0, w: 80, h: 60 });
+    button(row, 'btn', { text: 'F', size: 14, ax: 1, ay: 0.5, x: [1, -10], y: [0.5, 0], w: 80, h: 40, r: 10, bg: T.bg1, stroke: i < 2 ? color : T.line });
+  });
+  label(st, 'keystatus', { text: 'Click a key, then press the new key.', font: 'med', size: 13, color: T.muted, x: 32, y: 172, w: 600, h: 18 });
+  header(st, 'h2', 'GAMEPLAY', 204);
+  const bigRow = (name: string, y: number, text: string, hint: string) => {
+    const row = frame(st, name, { x: 32, y, w: 596, h: 62, bg: T.bg2, r: 12 });
+    label(row, 'label', { text, size: 17, x: 18, y: 10, w: 300, h: 22 });
+    label(row, 'hint', { text: hint, font: 'med', size: 12, color: T.muted, x: 18, y: 33, w: 330, h: 16 });
+    button(row, 'minus', { text: '-', size: 22, ax: 1, ay: 0.5, x: [1, -176], y: [0.5, 0], w: 44, h: 42, r: 10, bg: T.bg1 });
+    label(row, 'value', { text: '-', font: 'black', size: 18, align: 'center', ax: 1, ay: 0.5, x: [1, -62], y: [0.5, 0], w: 110, h: 42 });
+    button(row, 'plus', { text: '+', size: 22, ax: 1, ay: 0.5, x: [1, -12], y: [0.5, 0], w: 44, h: 42, r: 10, bg: T.bg1 });
+    return row;
+  };
+  bigRow('scroll', 226, 'Scroll speed', 'How fast lines fall');
+  const off = bigRow('offset', 298, 'Audio offset', 'Late? lower it. Early? raise it.');
+  button(off, 'calibrate', { text: 'CALIBRATE', size: 13, x: 232, y: 10, w: 120, h: 42, r: 10, bg: T.bg1 });
+  header(st, 'h3', 'AUDIO & VISUALS', 374);
+  const half = (name: string, x: number, text: string) => {
+    const row = frame(st, name, { x, y: 396, w: 290, h: 62, bg: T.bg2, r: 12 });
+    label(row, 'label', { text, size: 15, x: 18, y: 0, w: 110, h: 62 });
+    stepper(row, '', 10, 66);
+    return row;
+  };
+  half('volume', 32, 'Music volume');
+  half('hitsound', 338, 'Hit sound');
+  const tog = (name: string, x: number, text: string) => {
+    const row = frame(st, name, { x, y: 468, w: 190, h: 62, bg: T.bg2, r: 12 });
+    label(row, 'label', { text, size: 15, x: 16, y: 0, w: 110, h: 62 });
+    toggle(row, 52, 28);
+  };
+  tog('effects', 32, 'Effects');
+  tog('centerhud', 235, 'Center combo');
+  tog('hitzone', 438, 'Hit zone');
+  button(st, 'reset', { text: 'RESET DEFAULTS', size: 14, x: 32, y: 540, w: 596, h: 48 });
 
-  private slider(id: string, index: string, title: string, description: string, value: number, min: number, max: number, step: number, display: string, start: string, end: string) {
-    return `<div class="setting-row slider-row"><div><span class="setting-index">${index}</span><h2><label for="${id}">${title}</label></h2><p>${description}</p></div><div class="slider-control"><output id="${id}-value" for="${id}">${display}</output><input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${value}"><div class="range-labels"><span>${start}</span><span>${end}</span></div></div></div>`;
-  }
+  // style
+  const sp = panel(overlay, 'style', 700, 600);
+  label(sp, 'title', { text: 'Play style', font: 'black', size: 26, x: 32, y: 26, w: 400, h: 36 });
+  label(sp, 'h1', { text: 'STYLE', font: 'black', size: 10, color: T.muted, x: 32, y: 84, w: 300, h: 14 });
+  const styles = frame(sp, 'styles', { x: 32, y: 104, w: 636, h: 132 });
+  STYLE_ORDER.forEach((name, i) => {
+    const [title, desc] = STYLE_CARDS[name];
+    const c = button(styles, name.toLowerCase(), { text: '', x: i * 129, y: 0, w: 120, h: 132, r: 14 });
+    label(c, 'name', { text: title, font: 'black', size: 13, x: 12, y: 12, w: 100, h: 18 });
+    label(c, 'desc', { text: desc, font: 'med', size: 11, color: T.muted, wrap: true, valign: 'top', x: 12, y: 36, w: 98, h: 64 });
+    label(c, 'mult', { text: 'x1.00', font: 'black', size: 13, color: T.gold, x: 12, y: 106, w: 100, h: 16 });
+  });
+  label(sp, 'h2', { text: 'MODIFIERS', font: 'black', size: 10, color: T.muted, x: 32, y: 250, w: 300, h: 14 });
+  const speed = frame(sp, 'speed', { x: 32, y: 270, w: 636, h: 52, bg: T.bg2, r: 12 });
+  label(speed, 'label', { text: 'Song speed', size: 16, x: 16, y: 6, w: 300, h: 20 });
+  label(speed, 'hint', { text: 'Faster = harder (higher pitch). Slower = practice.', font: 'med', size: 11, color: T.muted, x: 16, y: 28, w: 360, h: 14 });
+  stepper(speed, '', 10, 84);
+  const prac = frame(sp, 'practice', { x: 32, y: 330, w: 636, h: 52, bg: T.bg2, r: 12 });
+  label(prac, 'label', { text: 'Practice section', size: 16, x: 16, y: 6, w: 240, h: 20 });
+  label(prac, 'hint', { text: 'Used by the Practice style', font: 'med', size: 11, color: T.muted, x: 16, y: 28, w: 240, h: 14 });
+  stepper(prac, 'to', 10, 84);
+  stepper(prac, 'from', 190, 84);
+  const mods = frame(sp, 'mods', { x: 32, y: 390, w: 636, h: 112 });
+  MOD_ORDER.forEach((name, i) => {
+    const m = frame(mods, name.toLowerCase(), { x: (i % 4) * 162, y: Math.floor(i / 4) * 60, w: 150, h: 52, bg: T.bg2, r: 12 });
+    label(m, 'label', { text: name, size: 14, x: 12, y: 7, w: 90, h: 18 });
+    label(m, 'hint', { text: MOD_INFO[name].hint, font: 'med', size: 10, color: T.muted, wrap: true, valign: 'top', x: 12, y: 27, w: 86, h: 22 });
+    toggle(m, 42, 24);
+  });
+  const footer = frame(sp, 'footer', { x: 32, y: 516, w: 636, h: 64, bg: T.bg2, r: 14 });
+  label(footer, 'label', { text: 'SCORE MULTIPLIER', font: 'black', size: 11, color: T.muted, x: 18, y: 10, w: 200, h: 14 });
+  label(footer, 'value', { text: 'x1.00', font: 'black', size: 24, color: T.gold, x: 18, y: 26, w: 120, h: 28 });
+  label(footer, 'note', { text: '', font: 'med', size: 13, color: T.red, x: 140, y: 26, w: 280, h: 28 });
+  button(footer, 'done', { text: 'DONE', size: 18, ax: 1, ay: 0.5, x: [1, -10], y: [0.5, 0], w: 170, h: 46 }, 'primary');
 
-  gameplay(song: Song, settings: Settings): HTMLCanvasElement {
-    this.preferences = settings;
-    this.selected = song;
-    this.reset();
-    this.root.classList.add('game-app');
-    this.root.innerHTML = `<header class="game-topbar"><span class="brand"><span class="brand-mark"><i></i><i></i><i></i></span><span>LINE<span>RUSH</span></span></span><span class="game-top-title">FIND YOUR FLOW</span><button class="icon-button" id="pause-game" aria-label="Pause game">${icon('pause')}</button></header><main class="game-layout"><aside class="game-song-panel"><span class="small-label">NOW PLAYING</span>${this.cover(song, 'game-cover')}<h1>${esc(song.title)}</h1><p>${esc(song.artist)}</p><span class="difficulty-pill ${song.difficulty.toLowerCase()}">${song.difficulty.toUpperCase()} <i>·</i> LV. ${String(song.level).padStart(2, '0')}</span><div class="game-song-metadata"><span>${song.bpm} <b>BPM</b></span><span>${clock(song.duration)} <b>LENGTH</b></span></div><div class="progress-label"><span id="elapsed-time">0:00</span><span>${clock(song.duration)}</span></div><div class="song-progress-track"><div id="song-progress"></div></div><div class="game-tip">${icon('headphones')} Stay in the moment.<br><span>Let the rhythm lead.</span></div><button class="pause-text" id="pause-left">${icon('pause')} Pause <kbd>ESC</kbd></button></aside><section class="playfield-shell"><canvas id="game-canvas" aria-label="Two-lane rhythm playfield"></canvas><div class="lane-buttons"><button data-lane="0" class="lane-button cyan" aria-label="Left lane, ${esc(keyName(settings.keys[0]))}"><span>${esc(keyName(settings.keys[0]))}</span><small>01 / LEFT</small></button><button data-lane="1" class="lane-button pink" aria-label="Right lane, ${esc(keyName(settings.keys[1]))}"><span>${esc(keyName(settings.keys[1]))}</span><small>02 / RIGHT</small></button></div></section><aside class="game-stats-panel"><div class="live-score"><span class="small-label">SCORE</span><strong id="live-score">0</strong></div><div class="live-main-stats"><div><span class="small-label">ACCURACY</span><strong><span id="live-accuracy">100.0</span><small>%</small></strong></div><div><span class="small-label">MULTIPLIER</span><strong class="cyan-text" id="live-multiplier">×1</strong></div></div><div class="combo-stat"><span class="small-label">CURRENT COMBO</span><strong id="live-combo">0</strong><span>KEEP IT GOING</span></div><div class="judgment-stats">${(['Perfect', 'Great', 'Good', 'Miss'] as const).map((judgment) => `<div class="${judgment.toLowerCase()}"><span><i></i>${judgment.toUpperCase()}</span><strong id="count-${judgment.toLowerCase()}">0</strong></div>`).join('')}</div><div class="health-block"><span class="small-label">ENERGY</span><div class="health-track"><div id="health-bar"></div></div><span id="health-value">100%</span></div></aside></main><div class="game-bottom"><span>${esc(keyName(settings.keys[0]))} + ${esc(keyName(settings.keys[1]))} <i>·</i> HIT THE CENTER LINE</span><canvas id="spectrum" aria-hidden="true"></canvas><span>SCROLL ${settings.scrollSpeed.toFixed(1)}×</span></div>`;
-    this.root.querySelector<HTMLButtonElement>('#pause-game')!.onclick = () => this.pause();
-    this.root.querySelector<HTMLButtonElement>('#pause-left')!.onclick = () => this.pause();
-    return this.root.querySelector<HTMLCanvasElement>('#game-canvas')!;
-  }
+  // calibration
+  const cal = panel(overlay, 'calib', 540, 470);
+  label(cal, 'title', { text: 'Calibrate', font: 'black', size: 26, x: 32, y: 26, w: 400, h: 36 });
+  label(cal, 'info', { text: 'Press START, then tap any lane key (or the circle) on every beat you HEAR. Close your eyes if it helps.', font: 'med', size: 14, color: T.muted, wrap: true, valign: 'top', x: 32, y: 80, w: 476, h: 44 });
+  const pad = button(cal, 'pad', { text: '', ax: 0.5, ay: 0.5, x: 270, y: 226, w: 150, h: 150, r: 'full', stroke: T.cyan, strokeW: 2 });
+  pad.classList.add('pop');
+  label(pad, 'count', { text: '0 / 20', font: 'black', size: 26, align: 'center', w: [1, 0], h: [1, 0] });
+  label(cal, 'result', { html: '', size: 16, align: 'center', wrap: true, x: 32, y: 316, w: 476, h: 50 });
+  button(cal, 'start', { text: 'START', size: 18, x: 32, y: 382, w: 230, h: 56 }, 'primary');
+  button(cal, 'apply', { text: 'APPLY', size: 18, x: 278, y: 382, w: 230, h: 56 });
 
-  updateStats(stats: Stats, time: number, song: Song) {
-    const set = (id: string, value: string) => { const element = this.root.querySelector('#' + id); if (element) element.textContent = value; };
-    set('live-score', number(stats.score));
-    set('live-accuracy', stats.accuracy.toFixed(1));
-    set('live-combo', String(stats.combo));
-    set('live-multiplier', '×' + stats.multiplier);
-    set('elapsed-time', clock(time));
-    set('health-value', Math.round(stats.health) + '%');
-    Object.entries(stats.counts).forEach(([judgment, count]) => set('count-' + judgment.toLowerCase(), String(count)));
-    const progress = this.root.querySelector<HTMLElement>('#song-progress');
-    if (progress) progress.style.width = Math.max(0, Math.min(100, time / song.duration * 100)) + '%';
-    const health = this.root.querySelector<HTMLElement>('#health-bar');
-    if (health) { health.style.height = stats.health + '%'; health.classList.toggle('low', stats.health < 30); }
+  // leaderboard
+  const bp = panel(overlay, 'board', 560, 590);
+  label(bp, 'title', { text: 'Leaderboard', font: 'black', size: 26, x: 32, y: 26, w: 400, h: 34 });
+  label(bp, 'sub', { text: '', size: 14, color: T.muted, x: 32, y: 62, w: 420, h: 18 });
+  const bl = frame(bp, 'list', { x: 32, y: 96, w: 496, h: 410 });
+  for (let i = 1; i <= 10; i++) {
+    const row = frame(bl, `row${i}`, { x: 0, y: (i - 1) * 41, w: 496, h: 36, bg: T.bg2, r: 8, hidden: true });
+    label(row, 'rank', { text: `#${i}`, font: 'black', size: 15, color: i === 1 ? T.gold : i <= 3 ? T.cyan : T.muted, x: 12, w: 44, h: 36 });
+    label(row, 'player', { text: '-', size: 15, truncate: true, x: 60, w: 260, h: 36 });
+    label(row, 'score', { text: '', font: 'black', size: 15, align: 'right', ax: 1, x: [1, -12], w: 160, h: 36 });
   }
+  label(bp, 'status', { text: '', font: 'med', size: 14, color: T.muted, align: 'center', wrap: true, x: 32, y: 230, w: 496, h: 40 });
+  const me = frame(bp, 'me', { x: 32, y: 516, w: 496, h: 48, bg: T.bg2, r: 12, stroke: T.line });
+  label(me, 'label', { text: 'YOUR BEST', font: 'black', size: 12, color: T.muted, x: 14, w: 100, h: 48 });
+  label(me, 'score', { text: '-', font: 'black', size: 18, align: 'right', ax: 1, x: [1, -14], w: 300, h: 48 });
 
-  pause() {
-    if (this.root.querySelector('.pause-overlay')) return;
-    const overlay = document.createElement('div');
-    overlay.className = 'pause-overlay';
-    overlay.innerHTML = `<section class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title"><span class="pause-symbol">${icon('pause')}</span><div class="eyebrow">TAKE A BREATHER</div><h1 id="pause-title">Beat on <span>hold.</span></h1><p>Your rhythm will be right here.</p><button class="button primary" id="resume-game">${icon('play')} RESUME</button><button class="button secondary" id="restart-game">${icon('restart')} Restart track</button><button class="quiet-button" id="quit-game">Back to track library ${icon('arrow')}</button></section>`;
-    this.root.appendChild(overlay);
-    overlay.querySelector<HTMLButtonElement>('#resume-game')!.onclick = () => { overlay.remove(); this.actions.resume(); };
-    overlay.querySelector<HTMLButtonElement>('#restart-game')!.onclick = () => { overlay.remove(); this.actions.restart(); };
-    overlay.querySelector<HTMLButtonElement>('#quit-game')!.onclick = () => { overlay.remove(); this.actions.quit(); };
-    overlay.querySelector<HTMLButtonElement>('#resume-game')!.focus();
-    this.root.dispatchEvent(new CustomEvent('game-pause-request', { bubbles: true }));
-  }
+  // profile
+  const pp = panel(overlay, 'profile', 720, 600);
+  label(pp, 'title', { text: 'Profile', font: 'black', size: 26, x: 32, y: 26, w: 160, h: 36 });
+  label(pp, 'ptitle', { text: '', font: 'black', size: 14, color: T.gold, x: 200, y: 36, w: 220, h: 20 });
+  button(pp, 'account', { text: 'ACCOUNT', size: 13, ax: 1, x: 620, y: 28, w: 110, h: 40 });
+  const pst = frame(pp, 'stats', { x: 32, y: 80, w: 656, h: 140 });
+  ([['level', 'LEVEL'], ['plays', 'PLAYS'], ['noteshit', 'NOTES HIT'], ['fullcombos', 'FULL COMBOS'], ['ssranks', 'SS RANKS'], ['playtime', 'PLAY TIME']] as const).forEach(([nm, title], i) => {
+    const box = frame(pst, nm, { x: (i % 3) * 222, y: Math.floor(i / 3) * 72, w: 210, h: 64, bg: T.bg2, r: 12 });
+    label(box, 'value', { text: '0', font: 'black', size: 22, x: 14, y: 8, w: 190, h: 28 });
+    label(box, 'label', { text: title, size: 11, color: T.muted, x: 14, y: 38, w: 190, h: 14 });
+  });
+  label(pp, 'achheader', { text: 'Achievements  ·  click an unlocked one to wear its title', font: 'bold', size: 12, color: T.muted, x: 32, y: 236, w: 600, h: 14 });
+  const grid = frame(pp, 'achievements', { x: 32, y: 258, w: 656, h: 320 });
+  ACHIEVEMENTS.forEach((_, i) => {
+    const a = button(grid, `ach${i + 1}`, { text: '', x: (i % 4) * 166, y: Math.floor(i / 4) * 106, w: 156, h: 98, r: 12 });
+    label(a, 'name', { text: '?', font: 'black', size: 13, x: 10, y: 8, w: 136, h: 18 });
+    label(a, 'desc', { text: '', font: 'med', size: 11, color: T.muted, wrap: true, valign: 'top', x: 10, y: 30, w: 136, h: 42 });
+    label(a, 'state', { text: 'LOCKED', font: 'black', size: 10, color: T.dim, x: 10, y: 76, w: 136, h: 14 });
+  });
 
-  results(result: Result, song: Song, bests: Bests) {
-    this.bests = bests;
-    this.reset();
-    const total = Object.values(result.counts).reduce((a, b) => a + b, 0) || 1;
-    const status = result.failed ? 'TRACK FAILED' : result.fullCombo ? 'FULL COMBO' : 'TRACK CLEARED';
-    this.root.innerHTML = `${this.header('', 'Track library')}<main class="results-main"><div class="results-heading"><div class="eyebrow">${result.failed ? 'EVERY RUN IS A NEW START' : 'THAT WAS YOUR MOMENT'}</div><h1>${result.failed ? 'Back for ' : 'Feel that '}<span>${result.failed ? 'more?' : 'rush.'}</span></h1><p>${esc(song.title)} <i>·</i> ${esc(song.artist)} <span class="difficulty-pill ${song.difficulty.toLowerCase()}">${song.difficulty.toUpperCase()}</span></p></div><section class="results-card"><div class="grade-panel"><div class="grade-orbit"></div><div class="grade-circle grade-${result.grade.toLowerCase()}"><span>GRADE</span><strong>${result.grade}</strong></div><span class="result-status ${result.failed ? 'failed' : ''}">${result.failed ? icon('close') : icon('check')} ${status}</span><p>${result.failed ? 'Take a breath. Find the beat.<br>Your next run starts here.' : result.fullCombo ? 'Every note. One unbroken rhythm.<br>Now that\'s a perfect connection.' : 'Another track. Another level up.<br>Keep chasing your perfect run.'}</p></div><div class="result-detail"><div class="result-score-head"><span class="small-label">FINAL SCORE</span>${result.newBest ? `<span class="new-best">${icon('trophy')} NEW BEST</span>` : ''}</div><strong id="result-score">0</strong><div class="result-metrics"><div><span>ACCURACY</span><strong>${result.accuracy.toFixed(2)}<small>%</small></strong></div><div><span>MAX COMBO</span><strong>${result.maxCombo}<small>×</small></strong></div></div><div class="result-breakdown">${(['Perfect', 'Great', 'Good', 'Miss'] as const).map((judgment) => `<div class="result-judgment ${judgment.toLowerCase()}"><span>${judgment.toUpperCase()}</span><div><i style="width:${result.counts[judgment] / total * 100}%"></i></div><strong>${result.counts[judgment]}</strong></div>`).join('')}</div></div></section><div class="results-actions"><button class="button secondary big" id="retry-song">${icon('restart')} One more run</button><button class="button primary big" id="continue-results">NEXT TRACK ${icon('arrow')}</button></div><p class="result-saved">${icon('check')} Your best is saved in this browser.</p></main>${this.footer()}`;
-    this.bindNavigation(() => this.select(this.preferences, this.bests, song.id));
-    this.root.querySelector<HTMLButtonElement>('#retry-song')!.onclick = () => this.actions.play(song);
-    this.root.querySelector<HTMLButtonElement>('#continue-results')!.onclick = () => this.select(this.preferences, this.bests, song.id);
-    const start = performance.now();
-    const animate = (now: number) => {
-      const progress = Math.min(1, (now - start) / 1100);
-      const target = this.root.querySelector('#result-score');
-      if (!target) return;
-      target.textContent = number(result.score * (1 - Math.pow(1 - progress, 3)));
-      if (progress < 1) this.animation = requestAnimationFrame(animate);
-    };
-    this.animation = requestAnimationFrame(animate);
-  }
+  // 1v1 lobby
+  const vp = panel(overlay, 'versus', 560, 540);
+  label(vp, 'title', { text: '1v1 battle', font: 'black', size: 26, x: 32, y: 26, w: 400, h: 36 });
+  label(vp, 'info', { text: 'Challenge someone in this server. You both play the same chart at the same time. Highest score wins.', font: 'med', size: 13, color: T.muted, wrap: true, valign: 'top', x: 32, y: 72, w: 496, h: 36 });
+  const songRow = frame(vp, 'song', { x: 32, y: 118, w: 496, h: 56, bg: T.bg2, r: 12 });
+  label(songRow, 'label', { text: 'SONG', font: 'black', size: 11, color: T.muted, x: 16, w: 60, h: 56 });
+  label(songRow, 'value', { text: '-', font: 'black', size: 16, truncate: true, x: 70, w: 300, h: 56 });
+  label(songRow, 'hint', { text: 'pick it in Song Select', font: 'med', size: 11, color: T.dim, align: 'right', ax: 1, x: [1, -16], w: 140, h: 56 });
+  label(vp, 'listheader', { text: 'PLAYERS IN THIS SERVER', font: 'black', size: 11, color: T.muted, x: 32, y: 190, w: 300, h: 14 });
+  label(vp, 'status', { text: '', font: 'med', size: 14, color: T.muted, align: 'center', wrap: true, x: 32, y: 300, w: 496, h: 60 });
 
-  loading(message: string) {
-    this.reset();
-    this.root.innerHTML = `${this.header()}<main class="message-screen"><div class="loading-orbit"><i></i><i></i></div><div class="eyebrow">GETTING IN SYNC</div><h1>${esc(message)}</h1><p>One moment. A good beat is worth the wait.</p></main>${this.footer()}`;
-  }
+  // account (login / sign up / manage)
+  buildAccountPanels(overlay, app);
 
-  error(message: string) {
-    this.reset();
-    this.root.innerHTML = `${this.header()}<main class="message-screen"><span class="error-icon">${icon('close')}</span><div class="eyebrow">A LITTLE OFFBEAT</div><h1>Let's try that again.</h1><p role="alert">${esc(message)}</p><button class="button primary" data-action="select">Back to tracks ${icon('arrow')}</button></main>${this.footer()}`;
-    this.bindNavigation();
-  }
+  label(overlay, 'toast', { text: '', size: 15, align: 'center', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -24], w: 500, h: 40, bg: T.bg3, bgT: 0.05, r: 20, hidden: true, cls: 'toast' });
+  frame(app, 'fader', { cls: 'fill fader nopointer', bg: '#000000' });
+}
 
-  calibration(): HTMLElement {
-    this.actions.stopPreview();
-    this.reset();
-    this.root.innerHTML = `${this.header('settings', 'Back to settings')}<main class="calibration-main"><div class="eyebrow">GET IN SYNC</div><h1>Find your <span>timing.</span></h1><p>Listen to the metronome. Tap along with each beat.<br>Use your left key or the circle below.</p><section id="calibration-area" class="calibration-area"><div id="calibration-status" class="calibration-status" role="status">Ready when you are.</div><button id="calibration-tap" class="calibration-tap" aria-label="Tap to the beat"><span class="calibration-ripple"></span><span class="tap-label">TAP</span><span class="tap-key">${esc(keyName(this.preferences.keys[0]))}</span></button><div class="calibration-readout"><div><span>TAPS</span><strong id="calibration-count">0 / 16</strong></div><div><span>SUGGESTED OFFSET</span><strong id="calibration-value">— ms</strong></div></div><div class="calibration-actions"><button id="calibration-start" class="button primary">${icon('play')} Start metronome</button><button id="calibration-apply" class="button secondary" disabled>${icon('check')} Apply offset</button><button id="calibration-reset" class="quiet-button">${icon('restart')} Start again</button></div><p class="calibration-help">For best results, use the same headphones or speakers you play with.</p><button id="calibration-back" class="quiet-button">${icon('back')} Back to settings</button></section></main>${this.footer()}`;
-    this.bindNavigation(() => this.settings(this.preferences, this.bests));
-    this.root.querySelector<HTMLButtonElement>('#calibration-back')!.onclick = () => this.settings(this.preferences, this.bests);
-    return this.root.querySelector<HTMLElement>('#calibration-area')!;
-  }
+function buildAccountPanels(overlay: HTMLElement, _app: HTMLElement) {
+  const input = (p: HTMLElement, name: string, y: number, placeholder: string, type: string, autocomplete: string) => {
+    const el = node(p, name, { tag: 'input', x: 40, y, w: 400, h: 52, bg: T.bg2, r: 12, stroke: T.line, cls: 'input' }) as HTMLInputElement;
+    el.type = type;
+    el.placeholder = placeholder;
+    el.autocomplete = autocomplete as AutoFill;
+    el.spellcheck = false;
+    el.maxLength = type === 'password' ? 128 : 20;
+    return el;
+  };
+  const auth = frame(overlay, 'auth', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.5, 0], w: 480, h: 560, bg: T.bg1, r: 20, stroke: T.line, hidden: true, cls: 'panel pop' });
+  const form = node(auth, 'form', { cls: 'fill', tag: 'div' });
+  label(form, 'logo', { html: 'LINE <span class="gradtext">RUSH</span>', font: 'black', size: 40, align: 'center', x: 0, y: 34, w: 480, h: 54 });
+  label(form, 'sub', { text: 'Log in to save your progress', font: 'med', size: 15, color: T.muted, align: 'center', x: 0, y: 92, w: 480, h: 20 });
+  const tabs = frame(form, 'tabs', { x: 40, y: 134, w: 400, h: 44, bg: T.bg2, r: 12 });
+  frame(tabs, 'highlight', { x: 4, y: 4, w: 196, h: 36, r: 9, bg: T.text, cls: 'slide' });
+  node(tabs, 'login', { tag: 'button', text: 'LOG IN', font: 'black', size: 12, align: 'center', x: 0, y: 0, w: 200, h: 44, color: T.bg0, cls: 'tab' });
+  node(tabs, 'signup', { tag: 'button', text: 'SIGN UP', font: 'black', size: 12, align: 'center', x: 200, y: 0, w: 200, h: 44, color: T.muted, cls: 'tab' });
+  label(form, 'ulabel', { text: 'USERNAME', font: 'black', size: 10, color: T.muted, x: 40, y: 196, w: 200, h: 14 });
+  input(form, 'username', 214, '3-20 letters, numbers or _', 'text', 'username');
+  label(form, 'plabel', { text: 'PASSWORD', font: 'black', size: 10, color: T.muted, x: 40, y: 278, w: 200, h: 14 });
+  input(form, 'password', 296, 'At least 10 characters', 'password', 'current-password');
+  label(form, 'clabel', { text: 'CONFIRM PASSWORD', font: 'black', size: 10, color: T.muted, x: 40, y: 360, w: 200, h: 14, hidden: true });
+  input(form, 'confirm', 378, 'Type it again', 'password', 'new-password').hidden = true;
+  label(form, 'error', { text: '', font: 'med', size: 13, color: T.red, align: 'center', wrap: true, x: 40, y: 360, w: 400, h: 36 });
+  button(form, 'submit', { text: 'LOG IN', size: 18, x: 40, y: 404, w: 400, h: 56 }, 'primary');
+  button(form, 'guest', { text: 'PLAY AS GUEST', size: 13, x: 40, y: 474, w: 400, h: 44 });
+  label(form, 'note', { text: 'Guest progress stays in this browser only.', font: 'med', size: 11, color: T.dim, align: 'center', x: 40, y: 524, w: 400, h: 16 });
+
+  const acct = panel(overlay, 'account', 520, 560);
+  label(acct, 'title', { text: 'Account', font: 'black', size: 26, x: 32, y: 26, w: 300, h: 36 });
+  label(acct, 'user', { text: '', font: 'black', size: 18, color: T.text, x: 32, y: 72, w: 440, h: 22 });
+  label(acct, 'since', { text: '', font: 'med', size: 12, color: T.muted, x: 32, y: 96, w: 440, h: 16 });
+  label(acct, 'sync', { text: '', font: 'med', size: 12, color: T.muted, x: 32, y: 114, w: 440, h: 16 });
+  label(acct, 'h1', { text: 'CHANGE PASSWORD', font: 'black', size: 10, color: T.muted, x: 32, y: 146, w: 300, h: 14 });
+  const ai = (name: string, y: number, ph: string, ac: string) => {
+    const el = node(acct, name, { tag: 'input', x: 32, y, w: 456, h: 46, bg: T.bg2, r: 12, stroke: T.line, cls: 'input' }) as HTMLInputElement;
+    el.type = 'password'; el.placeholder = ph; el.autocomplete = ac as AutoFill; el.maxLength = 128;
+    return el;
+  };
+  ai('current', 166, 'Current password', 'current-password');
+  ai('next', 220, 'New password (10+ characters)', 'new-password');
+  ai('confirm', 274, 'Confirm new password', 'new-password');
+  label(acct, 'msg', { text: '', font: 'med', size: 13, color: T.muted, align: 'center', wrap: true, x: 32, y: 324, w: 456, h: 32 });
+  button(acct, 'change', { text: 'UPDATE PASSWORD', size: 15, x: 32, y: 360, w: 456, h: 48 }, 'primary');
+  button(acct, 'logout', { text: 'LOG OUT', size: 15, x: 32, y: 420, w: 220, h: 48 });
+  button(acct, 'logoutall', { text: 'LOG OUT EVERYWHERE', size: 12, x: 268, y: 420, w: 220, h: 48 });
+  button(acct, 'delete', { text: 'DELETE ACCOUNT', size: 12, x: 32, y: 482, w: 456, h: 44, color: T.red, bg: T.bg1, stroke: T.line });
+}
+
+/** Scales the 1100x640 stages to fit the window (same rule as the Roblox UIScale). */
+export function fitStage() {
+  const s = Math.min(Math.max(Math.min(window.innerWidth / 1100, window.innerHeight / 640), 0.3), 1.6);
+  document.documentElement.style.setProperty('--fit', String(s));
 }

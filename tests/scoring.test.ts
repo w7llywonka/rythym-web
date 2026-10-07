@@ -1,83 +1,53 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyJudgment, grade, initialStats, judge, resultFor, windows } from '../src/scoring.ts';
+import { DEFAULT_SETTINGS } from '../src/config.ts';
+import { comboMultiplier, currentSet, fmtTime, formatNumber, gradeFor, keyName, levelFromXp, setMultiplier, xpForLevel } from '../src/scoring.ts';
+import { currentWeek, pickWeekly } from '../src/weekly.ts';
 
-test('timing windows include their boundaries and treat early and late hits equally', () => {
-  for (const sign of [-1, 1]) {
-    assert.equal(judge(sign * windows.Perfect), 'Perfect');
-    assert.equal(judge(sign * (windows.Perfect + 0.000001)), 'Great');
-    assert.equal(judge(sign * windows.Great), 'Great');
-    assert.equal(judge(sign * (windows.Great + 0.000001)), 'Good');
-    assert.equal(judge(sign * windows.Good), 'Good');
-    assert.equal(judge(sign * (windows.Good + 0.000001)), 'Miss');
-  }
-  assert.equal(judge(Number.NaN), 'Miss');
-  assert.equal(judge(Number.POSITIVE_INFINITY), 'Miss');
+test('combo multiplier steps at 10 / 25 / 50', () => {
+  assert.deepEqual([0, 9, 10, 24, 25, 49, 50, 500].map(comboMultiplier), [1, 1, 2, 2, 3, 3, 4, 4]);
 });
 
-test('combo threshold notes receive the new multiplier and misses reset it', () => {
-  const stats = initialStats();
-  for (let hit = 1; hit <= 50; hit++) {
-    const before = stats.score;
-    applyJudgment(stats, 'Perfect');
-    const expectedMultiplier = hit >= 50 ? 4 : hit >= 25 ? 3 : hit >= 10 ? 2 : 1;
-    assert.equal(stats.multiplier, expectedMultiplier);
-    assert.equal(stats.score - before, 300 * expectedMultiplier);
-  }
-  assert.equal(stats.combo, 50);
-  assert.equal(stats.maxCombo, 50);
-  const score = stats.score;
-  applyJudgment(stats, 'Miss');
-  assert.equal(stats.score, score);
-  assert.equal(stats.combo, 0);
-  assert.equal(stats.multiplier, 1);
-  assert.equal(stats.maxCombo, 50);
-  applyJudgment(stats, 'Great');
-  assert.equal(stats.score, score + 200);
+test('grades', () => {
+  assert.equal(gradeFor(100, true, [10, 0, 0, 0]), 'SS');
+  assert.equal(gradeFor(99.9, true, [9, 1, 0, 0]), 'S');
+  assert.equal(gradeFor(92, true, [5, 1, 1, 1]), 'A');
+  assert.equal(gradeFor(85, true, [5, 1, 1, 1]), 'B');
+  assert.equal(gradeFor(75, true, [5, 1, 1, 1]), 'C');
+  assert.equal(gradeFor(50, true, [5, 1, 1, 1]), 'D');
+  assert.equal(gradeFor(100, false, [10, 0, 0, 0]), 'F');
 });
 
-test('accuracy averages every judgment and health is bounded', () => {
-  const stats = initialStats();
-  applyJudgment(stats, 'Miss');
-  assert.equal(stats.health, 90);
-  applyJudgment(stats, 'Good');
-  assert.equal(stats.health, 91);
-  applyJudgment(stats, 'Great');
-  assert.equal(stats.health, 93);
-  applyJudgment(stats, 'Perfect');
-  assert.equal(stats.health, 96);
-  assert.ok(Math.abs(stats.accuracy - 52.5) < 0.000001);
-  assert.equal(stats.score, 600);
-  for (let hit = 0; hit < 5; hit++) applyJudgment(stats, 'Perfect');
-  assert.equal(stats.health, 100);
-  for (let miss = 0; miss < 15; miss++) applyJudgment(stats, 'Miss');
-  assert.equal(stats.health, 0);
+test('styles, speed and mods change the multiplier; autoplay and practice never save', () => {
+  const s = { ...DEFAULT_SETTINGS };
+  assert.deepEqual(setMultiplier(currentSet(s, false)), { mult: 1, unranked: false });
+  assert.ok(setMultiplier(currentSet({ ...s, rate: 1.5 }, false)).mult > 1);
+  assert.ok(setMultiplier(currentSet({ ...s, rate: 0.5 }, false)).mult < 1);
+  assert.ok(setMultiplier(currentSet({ ...s, hidden: true }, false)).mult > 1);
+  assert.equal(setMultiplier(currentSet(s, true)).unranked, true);
+  assert.equal(setMultiplier(currentSet({ ...s, style: 'Practice' }, false)).unranked, true);
 });
 
-test('SS requires a played all-perfect run, grades use accuracy, and a failed run is F', () => {
-  const stats = initialStats();
-  assert.equal(grade(stats, false), 'D');
-  applyJudgment(stats, 'Perfect');
-  assert.equal(grade(stats, false), 'SS');
-  assert.equal(grade(stats, true), 'F');
-  applyJudgment(stats, 'Great');
-  for (const [accuracy, expected] of [[95, 'S'], [90, 'A'], [80, 'B'], [70, 'C'], [69.99, 'D']] as const) {
-    stats.accuracy = accuracy;
-    assert.equal(grade(stats, false), expected);
-  }
+test('levels need 400 + 200 * level xp', () => {
+  assert.equal(levelFromXp(0).level, 1);
+  const need1 = xpForLevel(1);
+  assert.equal(levelFromXp(need1 - 1).level, 1);
+  assert.equal(levelFromXp(need1).level, 2);
+  assert.equal(levelFromXp(need1 + xpForLevel(2)).level, 3);
 });
 
-test('results snapshot counts and full combo includes Great and Good but excludes misses and failures', () => {
-  const stats = initialStats();
-  assert.equal(resultFor(stats, 'song', false).fullCombo, false);
-  applyJudgment(stats, 'Good');
-  applyJudgment(stats, 'Great');
-  const result = resultFor(stats, 'song', false);
-  assert.equal(result.fullCombo, true);
-  assert.equal(result.newBest, false);
-  assert.equal(result.songId, 'song');
-  assert.equal(resultFor(stats, 'song', true).fullCombo, false);
-  applyJudgment(stats, 'Miss');
-  assert.equal(result.counts.Miss, 0);
-  assert.equal(resultFor(stats, 'song', false).fullCombo, false);
+test('formatting helpers', () => {
+  assert.equal(formatNumber(1234567), '1,234,567');
+  assert.equal(fmtTime(65), '1:05');
+  assert.equal(keyName('KeyF'), 'F');
+});
+
+test('weekly challenge is the same for everyone in a week and rotates', () => {
+  const now = Date.UTC(2026, 9, 7) / 1000;
+  const a = currentWeek(now), b = currentWeek(now + 7 * 86400);
+  assert.equal(b.week, a.week + 1);
+  assert.ok(a.ends > now && a.ends <= now + 7 * 86400);
+  const pool = [{ id: 'x', difficulty: 'Hard' }, { id: 'y', difficulty: 'Expert' }, { id: 'z', difficulty: 'Easy' }];
+  assert.deepEqual(pickWeekly(a.week, pool), pickWeekly(a.week, [...pool].reverse()));
+  assert.notEqual(pickWeekly(a.week, pool)!.song.id, 'z');
 });

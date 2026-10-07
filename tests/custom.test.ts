@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { analyzeSamples, importSong } from '../src/custom.ts';
-import { generateChart } from '../src/chart.ts';
+import { trackFromImport } from '../src/tracks.ts';
 import { songs } from '../src/songs.ts';
 
 function fixture(bpm = 174, duration = 14): Float32Array {
@@ -60,17 +60,25 @@ test('import is local, retains playback PCM, and creates a stable hard chart ide
   assert.equal(first.song.difficulty, 'Hard');
   assert.equal(first.song.level, 10);
   assert.match(first.song.audio, /^local:custom-/);
-  assert.ok(generateChart(first.song).length > 40);
+  const track = trackFromImport(first.song);
+  assert.ok(track.custom);
+  assert.ok((track.charts[track.difficulty]?.notes.length ?? 0) > 40);
 });
 
-test('local challenge selects a denser chart than the standard Hard target', () => {
-  const standard = songs.find(song => song.id === 'hyperlane')!;
-  const imported = { ...standard, audio: 'local:custom-fixture' };
-  assert.ok(generateChart(imported).length > generateChart(standard).length);
-  const chart = generateChart(imported);
-  for (let i = 1; i < chart.length; i++) {
-    if (!chart[i - 1].chord && chart[i].time > chart[i - 1].time && chart[i].time - chart[i - 1].time < 0.14) {
-      assert.notEqual(chart[i].lane, chart[i - 1].lane);
-    }
-  }
+test('imports are tiered by tempo and charted over the whole song', () => {
+  const base = songs.find(song => song.id === 'hyperlane')!;
+  const tierAt = (bpm: number) => trackFromImport({ ...base, analysis: { ...base.analysis, bpm } }).difficulty;
+  assert.equal(tierAt(100), 'Easy');
+  assert.equal(tierAt(130), 'Hard');
+  assert.equal(tierAt(160), 'Expert');
+  assert.equal(tierAt(180), 'Extreme');
+  // repeat the onset grid to make a long (5 minute) recording
+  const a = base.analysis, times = 6;
+  const long = { ...base, duration: base.duration * times, analysis: { ...a, low: a.low.repeat(times), mid: a.mid.repeat(times), high: a.high.repeat(times) } };
+  const t = trackFromImport(long);
+  assert.equal(t.chartStart, undefined);
+  assert.equal(t.chartEnd, undefined);
+  assert.equal(t.displayLength, long.duration);
+  const notes = t.charts[t.difficulty]!.notes;
+  assert.ok(notes[notes.length - 1].time > long.duration - 15, 'notes run to the end of the song');
 });

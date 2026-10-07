@@ -1,62 +1,98 @@
-import type { Grade, Judgment, Result, Stats } from './types.ts';
+// Rules shared by gameplay, results and menus: grades, multipliers, XP, formatting.
+import { MOD_INFO, MOD_ORDER, RATE_MULT, STYLES } from './config.ts';
+import type { Grade, PlaySet, Settings } from './types.ts';
 
-export const windows = { Perfect: 0.045, Great: 0.09, Good: 0.14 } as const;
-
-const points: Record<Judgment, number> = { Perfect: 300, Great: 200, Good: 100, Miss: 0 };
-const accuracyWeight: Record<Judgment, number> = { Perfect: 1, Great: 0.7, Good: 0.4, Miss: 0 };
-const healthChange: Record<Judgment, number> = { Perfect: 3, Great: 2, Good: 1, Miss: -10 };
-
-export function judge(deltaSeconds: number): Judgment {
-  const distance = Math.abs(deltaSeconds);
-  if (distance <= windows.Perfect) return 'Perfect';
-  if (distance <= windows.Great) return 'Great';
-  if (distance <= windows.Good) return 'Good';
-  return 'Miss';
+export function comboMultiplier(combo: number): number {
+  if (combo >= 50) return 4;
+  if (combo >= 25) return 3;
+  if (combo >= 10) return 2;
+  return 1;
 }
 
-export function initialStats(): Stats {
-  return {
-    score: 0, accuracy: 100, combo: 0, maxCombo: 0, multiplier: 1, health: 100,
-    counts: { Perfect: 0, Great: 0, Good: 0, Miss: 0 },
-  };
-}
-
-export function applyJudgment(stats: Stats, judgment: Judgment): void {
-  stats.counts[judgment] += 1;
-  stats.combo = judgment === 'Miss' ? 0 : stats.combo + 1;
-  stats.maxCombo = Math.max(stats.maxCombo, stats.combo);
-  // A threshold hit earns its new multiplier: the 10th hit earns ×2, the 25th ×3,
-  // and the 50th ×4. A miss resets the multiplier before the next note.
-  stats.multiplier = stats.combo >= 50 ? 4 : stats.combo >= 25 ? 3 : stats.combo >= 10 ? 2 : 1;
-  stats.score += points[judgment] * stats.multiplier;
-  const judged = Object.values(stats.counts).reduce((sum, count) => sum + count, 0);
-  const weighted = (Object.keys(accuracyWeight) as Judgment[])
-    .reduce((sum, key) => sum + stats.counts[key] * accuracyWeight[key], 0);
-  stats.accuracy = (weighted / judged) * 100;
-  stats.health = Math.max(0, Math.min(100, stats.health + healthChange[judgment]));
-}
-
-export function grade(stats: Stats, failed: boolean): Grade {
-  if (failed) return 'F';
-  const judged = Object.values(stats.counts).reduce((sum, count) => sum + count, 0);
-  if (judged === 0) return 'D';
-  if (stats.counts.Perfect === judged) return 'SS';
-  if (stats.accuracy >= 95) return 'S';
-  if (stats.accuracy >= 90) return 'A';
-  if (stats.accuracy >= 80) return 'B';
-  if (stats.accuracy >= 70) return 'C';
+/** counts = [perfect, great, good, miss] */
+export function gradeFor(acc: number, cleared: boolean, counts: number[]): Grade {
+  if (!cleared) return 'F';
+  if (counts[1] + counts[2] + counts[3] === 0) return 'SS';
+  if (acc >= 95) return 'S';
+  if (acc >= 90) return 'A';
+  if (acc >= 80) return 'B';
+  if (acc >= 70) return 'C';
   return 'D';
 }
 
-export function resultFor(stats: Stats, songId: string, failed: boolean): Result {
-  const judged = Object.values(stats.counts).reduce((sum, count) => sum + count, 0);
+export function currentSet(settings: Settings, autoplay: boolean): PlaySet {
   return {
-    ...stats,
-    counts: { ...stats.counts },
-    songId,
-    grade: grade(stats, failed),
-    failed,
-    fullCombo: !failed && judged > 0 && stats.counts.Miss === 0,
-    newBest: false,
+    style: settings.style, rate: settings.rate,
+    hidden: settings.hidden, sudden: settings.sudden, flashlight: settings.flashlight, mirror: settings.mirror,
+    random: settings.random, wave: settings.wave, mines: settings.mines, auto: autoplay,
   };
+}
+
+/** Score multiplier for a play set, plus whether the run counts for personal bests. */
+export function setMultiplier(set: PlaySet): { mult: number; unranked: boolean } {
+  const style = STYLES[set.style];
+  let mult = style.mult * (RATE_MULT[set.rate] ?? 1);
+  for (const name of MOD_ORDER) {
+    const info = MOD_INFO[name];
+    if (set[info.key]) mult *= info.mult;
+  }
+  return { mult, unranked: !!(style.unranked || set.auto) };
+}
+
+export const rateText = (rate: number) => `${rate.toFixed(2)}x`;
+
+export function setSummary(set: PlaySet): string {
+  const parts = [STYLES[set.style].label];
+  if (set.rate !== 1) parts.push(rateText(set.rate));
+  for (const name of MOD_ORDER) {
+    const info = MOD_INFO[name];
+    if (set[info.key]) parts.push(info.label);
+  }
+  return parts.join('  ·  ');
+}
+
+export const xpForLevel = (level: number) => 400 + level * 200;
+
+export function levelFromXp(xp: number): { level: number; rest: number; need: number } {
+  let level = 1, rest = xp;
+  while (rest >= xpForLevel(level)) {
+    rest -= xpForLevel(level);
+    level++;
+  }
+  return { level, rest, need: xpForLevel(level) };
+}
+
+export function formatNumber(n: number): string {
+  return Math.floor(n).toLocaleString('en-US');
+}
+
+export function fmtTime(s: number): string {
+  const total = Math.max(0, Math.floor(s));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+const KEY_NAMES: Record<string, string> = {
+  Space: 'SPACE', Enter: 'ENTER', Backspace: 'BKSP', CapsLock: 'CAPS',
+  ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', ControlLeft: 'L-CTRL', ControlRight: 'R-CTRL',
+  AltLeft: 'L-ALT', AltRight: 'R-ALT', ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT',
+  Semicolon: ';', Comma: ',', Period: '.', Quote: "'", BracketLeft: '[', BracketRight: ']',
+  Minus: '-', Equal: '=', Backslash: '\\', Backquote: '`',
+};
+
+/** KeyboardEvent.code -> short label shown on buttons ("KeyF" -> "F"). */
+export function keyName(code: string): string {
+  if (KEY_NAMES[code]) return KEY_NAMES[code];
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit\d$/.test(code)) return code.slice(5);
+  if (/^Numpad\d$/.test(code)) return 'NUM ' + code.slice(6);
+  return code.toUpperCase();
+}
+
+export function gradeColor(g: string, T: Record<string, string>): string {
+  if (g === 'SS' || g === 'S') return T.gold;
+  if (g === 'A') return T.green;
+  if (g === 'B') return T.cyan;
+  if (g === 'C') return T.purple;
+  if (g === 'F') return T.red;
+  return T.muted;
 }

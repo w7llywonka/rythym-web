@@ -1,109 +1,125 @@
-import type { Best, Bests, Grade, Result, Settings } from './types.ts';
+// Saves Line Rush settings, bests, recent songs and profile in this browser (localStorage).
+// Everything loaded is sanitized the same way the Roblox server does before trusting it.
+import { DEFAULT_SETTINGS, HIT_SOUNDS, MODES, RATES, STYLES } from './config.ts';
+import type { Bests, Diff, Profile, RecentEntry, SaveData, Settings } from './types.ts';
 
-const settingsKey = 'line-rush.settings.v1';
-const bestsKey = 'line-rush.bests.v1';
-const clearGrades: Grade[] = ['SS', 'S', 'A', 'B', 'C', 'D'];
+export const STORAGE_KEY = 'lineRush.save.v2';
 
-function defaults(): Settings {
-  return { keys: ['f', 'j'], scrollSpeed: 1, offsetMs: 0, volume: 0.7, effects: true };
+export function defaultProfile(): Profile {
+  return {
+    xp: 0, plays: 0, notesHit: 0, fcs: 0, ss: 0, playSeconds: 0,
+    streak: 0, bestStreak: 0, lastDay: 0, title: '', achievements: {}, packs: {}, weekly: {},
+  };
 }
 
-function object(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+const num = (v: unknown, lo: number, hi: number, fallback: number) =>
+  typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback;
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const keyOk = (k: unknown): k is string => typeof k === 'string' && /^[A-Za-z0-9]{1,24}$/.test(k);
 
-function bounded(value: unknown, fallback: number, min: number, max: number): number {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? Math.max(min, Math.min(max, value)) : fallback;
-}
-
-function key(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const normalized = value.toLowerCase();
-  const named = ['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'enter', 'backspace', 'delete', 'insert', 'home', 'end', 'pageup', 'pagedown', 'capslock', 'numlock', 'scrolllock', 'pause', 'clear', 'contextmenu'];
-  const printable = normalized.length === 1 && normalized.charCodeAt(0) >= 32 && normalized.charCodeAt(0) !== 127;
-  return normalized !== '/' && (printable || named.includes(normalized) || /^f([1-9]|1\d|2[0-4])$/.test(normalized)) ? normalized : null;
-}
-
-export function isBindableKey(value: unknown): value is string { return key(value) !== null; }
-
-export function normaliseSettings(value: unknown): Settings {
-  const result = defaults();
-  if (!object(value)) return result;
-  if (Array.isArray(value.keys) && value.keys.length === 2) {
-    const left = key(value.keys[0]);
-    const right = key(value.keys[1]);
-    if (left && right && left !== right) result.keys = [left, right];
+export function sanitizeSettings(raw: unknown): Settings {
+  const s = isObj(raw) ? raw : {};
+  const out: Settings = { ...DEFAULT_SETTINGS, keys: [...DEFAULT_SETTINGS.keys] };
+  if (Array.isArray(s.keys) && keyOk(s.keys[0]) && keyOk(s.keys[1]) && s.keys[0] !== s.keys[1]) {
+    const third = keyOk(s.keys[2]) && s.keys[2] !== s.keys[0] && s.keys[2] !== s.keys[1] ? s.keys[2] : DEFAULT_SETTINGS.keys[2];
+    out.keys = [s.keys[0], s.keys[1], third];
   }
-  result.scrollSpeed = bounded(value.scrollSpeed, result.scrollSpeed, 0.5, 3);
-  result.offsetMs = Math.round(bounded(value.offsetMs, result.offsetMs, -300, 300) / 5) * 5;
-  result.volume = bounded(value.volume, result.volume, 0, 1);
-  if (typeof value.effects === 'boolean') result.effects = value.effects;
-  return result;
+  out.scrollSpeed = num(s.scrollSpeed, 0.5, 3, 1);
+  out.offset = Math.round(num(s.offset, -300, 300, 0));
+  out.musicVolume = num(s.musicVolume, 0, 1, 0.8);
+  out.effects = s.effects !== false;
+  out.centerHud = s.centerHud === true;
+  out.hitZone = s.hitZone !== false;
+  out.hitSound = HIT_SOUNDS.includes(s.hitSound as never) ? (s.hitSound as Settings['hitSound']) : 'TICK';
+  out.style = typeof s.style === 'string' && s.style in STYLES ? (s.style as Settings['style']) : 'Classic';
+  out.rate = RATES.includes(s.rate as number) ? (s.rate as number) : 1;
+  for (const mod of ['hidden', 'sudden', 'flashlight', 'mirror', 'random', 'wave', 'mines'] as const) out[mod] = s[mod] === true;
+  return out;
 }
 
-function read(key: string): unknown {
+function sanitizeBests(raw: unknown): Bests {
+  const out: Bests = {};
+  if (!isObj(raw)) return out;
+  let count = 0;
+  for (const [id, b] of Object.entries(raw)) {
+    if (id.length > 64 || !isObj(b) || typeof b.score !== 'number') continue;
+    if (++count > 200) break;
+    out[id] = {
+      score: Math.floor(num(b.score, 0, 1e9, 0)),
+      accuracy: num(b.accuracy, 0, 100, 0),
+      combo: Math.floor(num(b.combo, 0, 1e6, 0)),
+      grade: typeof b.grade === 'string' && ['SS', 'S', 'A', 'B', 'C', 'D', 'F'].includes(b.grade) ? (b.grade as never) : 'D',
+      fc: b.fc === true,
+    };
+  }
+  return out;
+}
+
+function sanitizeRecent(raw: unknown): RecentEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const out: RecentEntry[] = [];
+  for (const e of raw.slice(0, 10)) {
+    if (isObj(e) && typeof e.id === 'string' && e.id.length <= 64 && typeof e.chart === 'string' && e.chart in MODES) {
+      out.push({ id: e.id, chart: e.chart as Diff });
+    }
+  }
+  return out;
+}
+
+function sanitizeProfile(raw: unknown): Profile {
+  const p = isObj(raw) ? raw : {};
+  const out = defaultProfile();
+  out.xp = Math.floor(num(p.xp, 0, 1e9, 0));
+  out.plays = Math.floor(num(p.plays, 0, 1e7, 0));
+  out.notesHit = Math.floor(num(p.notesHit, 0, 1e9, 0));
+  out.fcs = Math.floor(num(p.fcs, 0, 1e7, 0));
+  out.ss = Math.floor(num(p.ss, 0, 1e7, 0));
+  out.playSeconds = Math.floor(num(p.playSeconds, 0, 1e9, 0));
+  out.streak = Math.floor(num(p.streak, 0, 1e5, 0));
+  out.bestStreak = Math.floor(num(p.bestStreak, 0, 1e5, 0));
+  out.lastDay = Math.floor(num(p.lastDay, 0, 1e7, 0));
+  out.title = typeof p.title === 'string' && p.title.length <= 24 ? p.title : '';
+  for (const field of ['achievements', 'packs'] as const) {
+    const src = p[field];
+    if (isObj(src)) for (const [id, v] of Object.entries(src)) if (id.length <= 32 && v === true) out[field][id] = true;
+  }
+  if (isObj(p.weekly)) {
+    for (const [week, score] of Object.entries(p.weekly)) {
+      if (/^\d{1,6}$/.test(week)) out.weekly[week] = Math.floor(num(score, 0, 1e9, 0));
+    }
+  }
+  return out;
+}
+
+export function sanitize(raw: unknown): SaveData {
+  const d = isObj(raw) ? raw : {};
+  return {
+    settings: sanitizeSettings(d.settings),
+    bests: sanitizeBests(d.bests),
+    recent: sanitizeRecent(d.recent),
+    profile: sanitizeProfile(d.profile),
+  };
+}
+
+// reading localStorage itself can throw (blocked site data, sandboxed frames)
+function browserStorage(): Storage | null {
+  try { return globalThis.localStorage ?? null; } catch { return null; }
+}
+
+export function load(storage: Pick<Storage, 'getItem'> | null = browserStorage()): SaveData {
   try {
-    const raw = globalThis.localStorage.getItem(key);
-    return raw === null ? null : JSON.parse(raw);
+    const text = storage?.getItem(STORAGE_KEY);
+    return sanitize(text ? JSON.parse(text) : null);
   } catch {
-    // Browsers may block storage, and old or manually edited saves may be invalid.
-    return null;
+    return sanitize(null);
   }
 }
 
-function write(key: string, value: unknown): void {
+export function save(data: SaveData, storage: Pick<Storage, 'setItem'> | null = browserStorage()): boolean {
   try {
-    globalThis.localStorage.setItem(key, JSON.stringify(value));
+    storage?.setItem(STORAGE_KEY, JSON.stringify(data));
+    return true;
   } catch {
-    // Quota exhaustion or disabled storage must never interrupt a song.
+    return false;
   }
-}
-
-export function loadSettings(): Settings {
-  return normaliseSettings(read(settingsKey));
-}
-
-export function saveSettings(settings: Settings): void {
-  write(settingsKey, normaliseSettings(settings));
-}
-
-function validBest(value: unknown): value is Best {
-  if (!object(value)) return false;
-  return typeof value.score === 'number' && Number.isSafeInteger(value.score) && value.score >= 0
-    && typeof value.accuracy === 'number' && Number.isFinite(value.accuracy) && value.accuracy >= 0 && value.accuracy <= 100
-    && typeof value.maxCombo === 'number' && Number.isSafeInteger(value.maxCombo) && value.maxCombo >= 0
-    && typeof value.grade === 'string' && clearGrades.includes(value.grade as Grade)
-    && typeof value.fullCombo === 'boolean';
-}
-
-function record(value: Best): Best {
-  return { score: value.score, accuracy: value.accuracy, maxCombo: value.maxCombo, grade: value.grade, fullCombo: value.fullCombo };
-}
-
-function validSongId(value: string): boolean {
-  return value.length > 0 && value !== '__proto__' && value !== 'constructor' && value !== 'prototype';
-}
-
-export function loadBests(): Bests {
-  const stored = read(bestsKey);
-  const result: Bests = {};
-  if (!object(stored)) return result;
-  for (const [songId, value] of Object.entries(stored)) {
-    if (validSongId(songId) && validBest(value)) result[songId] = record(value);
-  }
-  return result;
-}
-
-export function saveBest(result: Result): boolean {
-  if (result.failed || !validSongId(result.songId) || !validBest(result)) return false;
-  const bests = loadBests();
-  const previous = bests[result.songId];
-  const newBest = !previous || result.score > previous.score;
-  const fullCombo = result.fullCombo || Boolean(previous?.fullCombo);
-  if (newBest) bests[result.songId] = { ...record(result), fullCombo };
-  else if (fullCombo && !previous.fullCombo) bests[result.songId] = { ...previous, fullCombo };
-  else return false;
-  write(bestsKey, bests);
-  return newBest;
 }

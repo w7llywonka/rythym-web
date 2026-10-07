@@ -168,9 +168,15 @@ export async function analyzeSamples(input: Float32Array, inputRate: number, onP
       const center = Math.round((time - FFT_SIZE / 2 / ANALYSIS_RATE) / dt);
       // Four-second loudness windows keep quieter sections playable.
       const local = band.subarray(Math.max(0, center - Math.round(2 / dt)), Math.min(frameCount, center + Math.round(2 / dt)));
-      const localReference = percentile(local, 0.92);
-      const normalizer = Math.max(reference * 0.35, localReference * 0.7, 1e-7);
-      encoded.push(String(Math.min(9, Math.max(0, Math.round(strength / normalizer * 6)))));
+      const sortedLocal = Float32Array.from(local).sort();
+      const at = (q: number) => sortedLocal[Math.min(sortedLocal.length - 1, Math.floor((sortedLocal.length - 1) * q))] ?? 0;
+      const localReference = at(0.92);
+      // subtract the section's background level so steady texture (pads, hats, reverb) doesn't
+      // read as hits, and only lift quiet sections partway
+      const floor = at(0.6);
+      const normalizer = Math.max(reference * 0.5, localReference * 0.9, 1e-7);
+      const above = Math.max(0, strength - floor * 0.8);
+      encoded.push(String(Math.min(9, Math.max(0, Math.round(above / normalizer * 6.5)))));
       if (index % 512 === 0) await yieldToBrowser();
     }
     strengths.push(encoded.join(''));
