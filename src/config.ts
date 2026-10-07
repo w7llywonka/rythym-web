@@ -125,10 +125,12 @@ export const DEFAULT_KEYS: [string, string, string] = ['KeyF', 'KeyJ', 'KeyR'];
 export const DEFAULT_SETTINGS: Settings = {
   keys: [...DEFAULT_KEYS],
   scrollSpeed: 1, offset: 0, musicVolume: 0.8, effects: true, centerHud: false, hitZone: true, hitSound: 'TICK',
+  laneColors: [T.cyan, T.pink], chordColor: T.gold, noteStyle: 'Glow', noteSize: 22,
   style: 'Classic', rate: 1,
   hidden: false, sudden: false, flashlight: false, mirror: false, random: false, wave: false, mines: false,
 };
 // keys that can't be bound (browser/menu keys)
 export const BLOCKED_KEYS = new Set(['Escape', 'Slash', 'Tab', 'F5', 'F11', 'F12', 'MetaLeft', 'MetaRight']);
 export const STAR_COLORS = ['#CD7F32', '#CDD2DC', T.gold, T.cyan];
+export const SWATCHES = ['#2BD4FF', '#FF5CA8', '#F5C451', '#4ADE80', '#A78BFA', '#FF8A3D', '#FF6B7A', '#F4F4F6'];
 export const KEY_LABELS = ['Button 1', 'Button 2', 'Restart'];

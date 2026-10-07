@@ -1,6 +1,7 @@
 // Saves Line Rush settings, bests, recent songs and profile in this browser (localStorage).
 // Everything loaded is sanitized the same way the Roblox server does before trusting it.
 import { DEFAULT_SETTINGS, HIT_SOUNDS, MODES, RATES, STYLES } from './config.ts';
+import { NOTE_SIZE, NOTE_STYLES } from './look.ts';
 import type { Bests, Diff, Profile, RecentEntry, SaveData, Settings } from './types.ts';
 
 export const STORAGE_KEY = 'lineRush.save.v2';
@@ -19,7 +20,7 @@ const keyOk = (k: unknown): k is string => typeof k === 'string' && /^[A-Za-z0-9
 
 export function sanitizeSettings(raw: unknown): Settings {
   const s = isObj(raw) ? raw : {};
-  const out: Settings = { ...DEFAULT_SETTINGS, keys: [...DEFAULT_SETTINGS.keys] };
+  const out: Settings = { ...DEFAULT_SETTINGS, keys: [...DEFAULT_SETTINGS.keys], laneColors: [...DEFAULT_SETTINGS.laneColors] };
   if (Array.isArray(s.keys) && keyOk(s.keys[0]) && keyOk(s.keys[1]) && s.keys[0] !== s.keys[1]) {
     const third = keyOk(s.keys[2]) && s.keys[2] !== s.keys[0] && s.keys[2] !== s.keys[1] ? s.keys[2] : DEFAULT_SETTINGS.keys[2];
     out.keys = [s.keys[0], s.keys[1], third];
@@ -30,6 +31,13 @@ export function sanitizeSettings(raw: unknown): Settings {
   out.effects = s.effects !== false;
   out.centerHud = s.centerHud === true;
   out.hitZone = s.hitZone !== false;
+  const hex = (v: unknown, fallback: string) => (typeof v === 'string' && /^#[0-9A-Fa-f]{6}$/.test(v) ? v.toUpperCase() : fallback);
+  if (Array.isArray(s.laneColors)) {
+    out.laneColors = [hex(s.laneColors[0], DEFAULT_SETTINGS.laneColors[0]), hex(s.laneColors[1], DEFAULT_SETTINGS.laneColors[1])];
+  }
+  out.chordColor = hex(s.chordColor, DEFAULT_SETTINGS.chordColor);
+  out.noteStyle = NOTE_STYLES.includes(s.noteStyle as never) ? (s.noteStyle as Settings['noteStyle']) : DEFAULT_SETTINGS.noteStyle;
+  out.noteSize = Math.round(num(s.noteSize, NOTE_SIZE.min, NOTE_SIZE.max, DEFAULT_SETTINGS.noteSize) / 2) * 2;
   out.hitSound = HIT_SOUNDS.includes(s.hitSound as never) ? (s.hitSound as Settings['hitSound']) : 'TICK';
   out.style = typeof s.style === 'string' && s.style in STYLES ? (s.style as Settings['style']) : 'Classic';
   out.rate = RATES.includes(s.rate as number) ? (s.rate as number) : 1;

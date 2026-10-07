@@ -1,6 +1,6 @@
 // Builds the whole interface as a 1100x640 "stage" that is scaled to fit the window, using the same
 // positions, sizes, colors and type as the Roblox version. Elements are looked up by dotted path: $('home.play').
-import { ACHIEVEMENTS, MOD_INFO, MOD_ORDER, STYLE_CARDS, STYLE_ORDER, T, TAB_ORDER } from './config.ts';
+import { ACHIEVEMENTS, MOD_INFO, MOD_ORDER, STYLE_CARDS, STYLE_ORDER, SWATCHES, T, TAB_ORDER } from './config.ts';
 
 type UD = number | [number, number]; // pixels, or [scale, pixels] like Roblox's UDim
 export interface Opts {
@@ -92,7 +92,7 @@ export function button(p: HTMLElement, name: string, o: Opts, style: 'primary' |
     font: 'black', align: 'center', r: 12, ...o, size, tag: 'button',
     ...(style === 'primary'
       ? { bg: T.text, color: T.bg0 }
-      : { bg: o.bg ?? T.bg2, stroke: o.stroke ?? T.line, color: o.color ?? T.text }),
+      : { bg: o.bg, stroke: o.stroke ?? T.line, color: o.color ?? T.text }),
   });
   b.classList.add('btn', style);
   return b;
@@ -130,14 +130,12 @@ export function buildUI(app: HTMLElement) {
   const logo = frame(home, 'logo', { ax: 0.5, x: [0.5, 0], y: 92, w: 700, h: 170, cls: 'pop' });
   label(logo, 'line', { text: 'LINE', font: 'black', size: 116, align: 'right', w: 330, h: 140 });
   label(logo, 'rush', { text: 'RUSH', font: 'black', size: 116, x: 352, w: 360, h: 140, cls: 'gradtext' });
-  frame(logo, 'bar1', { x: 200, y: 150, w: 140, h: 4, bg: T.cyan, r: 2 });
-  frame(logo, 'bar2', { x: 360, y: 150, w: 140, h: 4, bg: T.pink, r: 2 });
-  label(home, 'tagline', { text: "Two buttons. Real beats. Don't miss.", font: 'med', size: 17, color: T.muted, align: 'center', ax: 0.5, x: [0.5, 0], y: 282, w: 700, h: 26 });
+  label(home, 'tagline', { text: "Two buttons. Real beats. Don't miss.", font: 'med', size: 17, color: T.muted, align: 'center', ax: 0.5, x: [0.5, 0], y: 268, w: 700, h: 26 });
   button(home, 'play', { text: 'PLAY', size: 30, ax: 0.5, x: [0.5, 0], y: 350, w: 300, h: 64, r: 16 }, 'primary');
   button(home, 'settings', { text: 'SETTINGS', size: 13, ax: 0.5, x: [0.5, 0], y: 426, w: 300, h: 50, r: 14 });
   label(home, 'howto', { html: '', font: 'med', size: 14, color: T.muted, align: 'center', wrap: true, ax: 0.5, x: [0.5, 0], y: 492, w: 340, h: 40 });
   label(home, 'nowplaying', { html: '', font: 'med', size: 14, color: T.dim, align: 'center', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -18], w: 800, h: 20 });
-  const chip = frame(home, 'chip', { x: 30, y: 24, w: 300, h: 64, bg: T.bg1, r: 14, stroke: T.line });
+  const chip = frame(home, 'chip', { x: 30, y: 24, w: 300, h: 64, r: 14 });
   label(chip, 'name', { text: 'Player', font: 'black', size: 16, truncate: true, x: 14, y: 8, w: 180, h: 20 });
   label(chip, 'level', { text: 'LV 1', font: 'black', size: 14, color: T.gold, align: 'right', ax: 1, x: [1, -14], y: 8, w: 90, h: 20 });
   const xp = frame(chip, 'xp', { x: 14, y: 35, w: 272, h: 4, bg: T.bg3, r: 2, clip: true });
@@ -146,7 +144,7 @@ export function buildUI(app: HTMLElement) {
   button(home, 'versus', { text: '1V1', size: 13, ax: 1, x: 930, y: 24, w: 90, h: 44 });
   button(home, 'profile', { text: 'PROFILE', size: 13, ax: 1, x: 1070, y: 24, w: 130, h: 44 });
 
-  const weekly = frame(home, 'weekly', { x: 40, y: 340, w: 320, h: 236, bg: T.bg1, r: 16, stroke: T.line });
+  const weekly = frame(home, 'weekly', { x: 40, y: 340, w: 320, h: 236, r: 16, stroke: T.line });
   label(weekly, 'header', { text: 'WEEKLY CHALLENGE', font: 'black', size: 11, color: T.gold, x: 16, y: 14, w: 200, h: 14 });
   label(weekly, 'ends', { text: '', size: 11, color: T.muted, align: 'right', ax: 1, x: [1, -16], y: 14, w: 120, h: 14 });
   label(weekly, 'song', { text: '-', font: 'black', size: 20, truncate: true, x: 16, y: 36, w: 288, h: 26 });
@@ -156,7 +154,7 @@ export function buildUI(app: HTMLElement) {
   label(weekly, 'mine', { text: '', font: 'med', size: 12, color: T.muted, x: 16, y: 128, w: 288, h: 16 });
   button(weekly, 'play', { text: 'PLAY WEEKLY', size: 13, x: 16, y: 172, w: 288, h: 46, color: T.gold });
 
-  const feed = frame(home, 'feed', { x: 740, y: 340, w: 320, h: 236, bg: T.bg1, r: 16, stroke: T.line });
+  const feed = frame(home, 'feed', { x: 740, y: 340, w: 320, h: 236, r: 16, stroke: T.line });
   label(feed, 'header', { text: 'LIVE FEED', font: 'black', size: 11, color: T.muted, x: 16, y: 14, w: 200, h: 14 });
   frame(feed, 'dot', { x: 96, y: 18, w: 6, h: 6, bg: T.red, r: 'full', cls: 'livedot' });
   for (let i = 1; i <= 6; i++) {
@@ -170,7 +168,7 @@ export function buildUI(app: HTMLElement) {
   label(select, 'hint', { text: '', font: 'med', size: 13, color: T.muted, x: 400, y: 28, w: 380, h: 44 });
   button(select, 'settings', { text: 'SETTINGS', size: 13, ax: 1, x: 1070, y: 28, w: 130, h: 44 });
   button(select, 'import', { text: '+ IMPORT', size: 13, ax: 1, x: 930, y: 28, w: 110, h: 44 });
-  const tabs = frame(select, 'tabs', { x: 30, y: 92, w: 558, h: 46, bg: T.bg1, r: 12, stroke: T.line });
+  const tabs = frame(select, 'tabs', { x: 30, y: 92, w: 558, h: 46, r: 12 });
   frame(tabs, 'highlight', { x: 6, y: 4, w: 106, h: 38, r: 9, cls: 'slide' });
   TAB_ORDER.forEach((tab, i) => {
     node(tabs, tab.toLowerCase(), { tag: 'button', text: tab.toUpperCase(), font: 'black', size: 12, align: 'center', color: T.muted, x: 4 + i * 110, y: 0, w: 110, h: 46, cls: 'tab' });
@@ -190,14 +188,14 @@ export function buildUI(app: HTMLElement) {
   label(detail, 'pack', { text: '', font: 'black', size: 11, color: T.muted, align: 'right', x: 20, y: 168, w: 400, h: 16 });
   const stats = frame(detail, 'stats', { x: 20, y: 194, w: 400, h: 56 });
   ['bpm', 'length', 'notes', 'level'].forEach((nm, i) => {
-    const box = frame(stats, nm, { x: i * 103, y: 0, w: 91, h: 56, r: 10, stroke: T.line });
+    const box = frame(stats, nm, { x: i * 103, y: 0, w: 91, h: 56, r: 10, bg: T.bg2 });
     label(box, 'value', { text: '-', font: 'black', size: 19, align: 'center', x: 0, y: 9, w: 91, h: 24 });
     label(box, 'label', { text: nm.toUpperCase(), size: 10, color: T.muted, align: 'center', x: 0, y: 33, w: 91, h: 14 });
   });
   const chartRow = frame(detail, 'chartrow', { x: 20, y: 262, w: 400, h: 40 });
   button(chartRow, 'base', { text: 'EASY', size: 14, x: 0, y: 0, w: 196, h: 40, r: 10 });
   button(chartRow, 'plus', { text: 'HARD +', size: 14, x: 204, y: 0, w: 196, h: 40, r: 10 });
-  const best = frame(detail, 'best', { x: 20, y: 312, w: 400, h: 84, bg: T.bg2, r: 12 });
+  const best = frame(detail, 'best', { x: 20, y: 312, w: 400, h: 84, r: 12, stroke: T.line });
   label(best, 'header', { text: 'PERSONAL BEST', font: 'black', size: 10, color: T.muted, x: 16, y: 10, w: 200, h: 14 });
   button(best, 'top', { text: 'TOP 10 →', size: 10, x: 130, y: 6, w: 80, h: 22, r: 8, bg: T.bg1 });
   label(best, 'score', { text: '-', font: 'black', size: 26, x: 16, y: 26, w: 260, h: 30 });
@@ -214,6 +212,7 @@ export function buildUI(app: HTMLElement) {
   // GAME ---------------------------------------------------------------
   const game = frame(root, 'game', { cls: 'fill', hidden: true });
   const pf = frame(game, 'pf', { ax: 0.5, x: [0.5, 0], y: 20, w: 344, h: 600, bg: T.bg1, r: 20, cls: 'pf' });
+  frame(pf, 'pulse', { cls: 'fill pfpulse', r: 20 });
   for (const i of [1, 2]) {
     const color = i === 1 ? T.cyan : T.pink;
     const lane = frame(pf, `lane${i}`, { x: i === 1 ? 12 : 176, y: 12, w: 156, h: 576, r: 14, clip: true, cls: 'lane' });
@@ -304,7 +303,7 @@ export function buildUI(app: HTMLElement) {
   label(rp, 'xp', { text: '', font: 'black', size: 14, color: T.gold, align: 'right', ax: 1, x: 820, y: 110, w: 300, h: 16 });
   label(rp, 'score', { text: '0', font: 'black', size: 54, x: 378, y: 124, w: 440, h: 60 });
   ['accuracy', 'maxcombo'].forEach((nm, i) => {
-    const box = frame(rp, nm, { x: 380 + i * 226, y: 196, w: 214, h: 70, r: 12, stroke: T.line });
+    const box = frame(rp, nm, { x: 380 + i * 226, y: 196, w: 214, h: 70, r: 12, bg: T.bg2 });
     label(box, 'label', { text: nm === 'maxcombo' ? 'MAX COMBO' : 'ACCURACY', font: 'black', size: 10, color: T.muted, x: 16, y: 12, w: 180, h: 14 });
     label(box, 'value', { text: '-', font: 'black', size: 28, x: 16, y: 28, w: 190, h: 32 });
   });
@@ -377,7 +376,34 @@ export function buildUI(app: HTMLElement) {
   tog('effects', 32, 'Effects');
   tog('centerhud', 235, 'Center combo');
   tog('hitzone', 438, 'Hit zone');
-  button(st, 'reset', { text: 'RESET DEFAULTS', size: 14, x: 32, y: 540, w: 596, h: 48 });
+  button(st, 'customize', { text: 'CUSTOMIZE COLORS & LINES', size: 13, x: 32, y: 540, w: 360, h: 48 });
+  button(st, 'reset', { text: 'RESET DEFAULTS', size: 13, x: 404, y: 540, w: 224, h: 48, color: T.muted });
+
+  // customize: lane / chord colors, line style and thickness, with a live preview
+  const cp = panel(overlay, 'custom', 620, 624);
+  label(cp, 'title', { text: 'Customize', font: 'black', size: 26, x: 32, y: 26, w: 400, h: 36 });
+  label(cp, 'sub', { text: 'Colors and lines. Saved with your settings.', font: 'med', size: 13, color: T.muted, x: 32, y: 62, w: 400, h: 18 });
+  frame(cp, 'preview', { x: 32, y: 96, w: 556, h: 150, bg: T.bg0, r: 14, stroke: T.line, clip: true });
+  const swatchRow = (name: string, y: number, text: string) => {
+    const row = frame(cp, name, { x: 32, y, w: 556, h: 50, bg: T.bg2, r: 12 });
+    label(row, 'label', { text, size: 14, x: 16, y: 0, w: 130, h: 50 });
+    SWATCHES.forEach((c, i) => node(row, `sw${i}`, { tag: 'button', ay: 0.5, x: 150 + i * 40, y: [0.5, 0], w: 26, h: 26, bg: c, r: 'full', cls: 'swatch' }));
+    const pick = node(row, 'pick', { tag: 'input', ay: 0.5, x: 150 + 8 * 40 + 8, y: [0.5, 0], w: 26, h: 26, r: 'full', cls: 'colorpick' }) as HTMLInputElement;
+    pick.type = 'color';
+    pick.title = 'Pick any color';
+  };
+  swatchRow('lane1', 262, 'Button 1');
+  swatchRow('lane2', 320, 'Button 2');
+  swatchRow('chord', 378, 'Chords');
+  const stepRow = (name: string, y: number, text: string) => {
+    const row = frame(cp, name, { x: 32, y, w: 556, h: 50, bg: T.bg2, r: 12 });
+    label(row, 'label', { text, size: 14, x: 16, y: 0, w: 200, h: 50 });
+    stepper(row, '', 10, 110, 34, 14);
+  };
+  stepRow('style', 436, 'Line style');
+  stepRow('size', 494, 'Line thickness');
+  button(cp, 'reset', { text: 'RESET LOOK', size: 13, x: 32, y: 558, w: 200, h: 44, color: T.muted });
+  button(cp, 'done', { text: 'DONE', size: 15, ax: 1, x: 588, y: 558, w: 180, h: 44 }, 'primary');
 
   // style
   const sp = panel(overlay, 'style', 700, 600);

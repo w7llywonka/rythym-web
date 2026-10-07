@@ -2,7 +2,8 @@
 // Song time comes from the Web Audio clock so notes follow exactly what you hear.
 import { cancel, ease, fade, pop, tween } from './anim.ts';
 import type { AudioEngine } from './audio.ts';
-import { JUDGMENTS, K, LANE_COLORS, MINE_HIT, MISS, MODES, STYLES, T, type Judgment, type Mode, type Style } from './config.ts';
+import { JUDGMENTS, K, MINE_HIT, MISS, MODES, STYLES, T, type Judgment, type Mode, type Style } from './config.ts';
+import { styleHold, styleNote } from './look.ts';
 import { comboMultiplier, fmtTime, formatNumber, keyName, setMultiplier, setSummary } from './scoring.ts';
 import type { Diff, Lane, PlaySet, Settings, Track } from './types.ts';
 import { $, rgba, show, txt } from './ui.ts';
@@ -56,6 +57,24 @@ export class Game {
 
   constructor(private audio: AudioEngine, private hooks: GameHooks) {
     this.applyHudLayout();
+  }
+
+  private laneColor(lane: Lane) { return this.hooks.settings().laneColors[lane - 1]; }
+
+  /** paints buttons, beams and hit zones in the chosen lane colors */
+  applyLook() {
+    for (const lane of [1, 2] as Lane[]) {
+      const c = this.laneColor(lane);
+      const p = `game.pf.lane${lane}`;
+      $(`${p}.rec`).style.boxShadow = `0 0 0 1.5px ${rgba(c, 0.45)}`;
+      $(`${p}.rec.glow`).style.backgroundColor = c;
+      $(`${p}.rec.heldglow`).style.backgroundColor = c;
+      $(`${p}.beam`).style.backgroundImage = `linear-gradient(180deg, ${rgba(c, 1)} 0%, ${rgba(c, 0.85)} 55%, ${rgba(c, 0)} 100%)`;
+      $(`${p}.held`).style.backgroundImage = `linear-gradient(180deg, ${rgba(c, 1)} 0%, ${rgba(c, 0.9)} 60%, ${rgba(c, 0.6)} 100%)`;
+      for (const nm of ['good', 'great', 'perfect']) $(`${p}.zone.${nm}`).style.backgroundColor = c;
+      this.cue[lane] = -1;
+      this.setCue(lane, 0);
+    }
   }
 
   // ---- clock ----
@@ -184,7 +203,7 @@ export class Game {
 
   private flashReceptor(lane: Lane, color: string) {
     const rec = $(`game.pf.lane${lane}.rec`);
-    const base = LANE_COLORS[lane];
+    const base = this.laneColor(lane);
     rec.style.boxShadow = `0 0 0 1.5px ${color}`;
     tween(rec, 'stroke', 0, 1, 0.35, () => {}, ease.quad, 0, () => { rec.style.boxShadow = `0 0 0 1.5px ${rgba(base, 0.45)}`; });
   }
@@ -216,7 +235,7 @@ export class Game {
     if (q === this.cue[lane]) return;
     this.cue[lane] = q;
     const target = $(`game.pf.lane${lane}.rec.target`);
-    const color = LANE_COLORS[lane];
+    const color = this.laneColor(lane);
     target.style.height = `${3 + 2 * q}px`;
     target.style.backgroundColor = q > 0 ? LIGHTEN(color, 0.6 * q) : color;
     target.style.boxShadow = `0 0 ${8 + 14 * q}px ${rgba(color, 0.4 - 0.5 * q)}`;
@@ -239,25 +258,24 @@ export class Game {
 
   private makeNote(n: RunNote) {
     const lane = $(`game.pf.lane${n.lane}.notes`);
-    const color = n.mine ? '#FF283C' : n.chord ? T.gold : LANE_COLORS[n.lane];
-    const effects = this.hooks.settings().effects;
+    const s = this.hooks.settings();
+    const color = n.mine ? '#FF283C' : n.chord ? s.chordColor : this.laneColor(n.lane);
+    const effects = s.effects;
     if (n.endTime !== undefined) {
       const body = document.createElement('div');
       body.className = 'hold';
-      body.style.background = `linear-gradient(180deg, ${rgba(color, 0.5)}, ${rgba(color, 0)})`;
-      body.style.backgroundColor = rgba(color, 0.3);
       const cap = document.createElement('div');
       cap.className = 'cap';
-      cap.style.background = color;
+      styleHold(body, cap, color, s.noteStyle);
       body.appendChild(cap);
       lane.appendChild(body);
       n.body = body;
     }
     const el = document.createElement('div');
     el.className = 'note';
-    el.style.background = effects ? rgba(color, 0.8) : 'transparent';
     const bar = document.createElement('div');
     bar.className = 'bar';
+    styleNote(el, bar, color, s.noteStyle, s.noteSize, effects);
     if (n.mine) {
       bar.style.background = 'linear-gradient(180deg, #5A000F, #280008)';
       bar.style.boxShadow = `0 0 0 2.5px ${color}`;
@@ -266,9 +284,6 @@ export class Game {
       x.textContent = 'X X X';
       x.style.color = color;
       bar.appendChild(x);
-    } else {
-      bar.style.background = `linear-gradient(180deg, ${LIGHTEN(color, 0.45)}, ${color})`;
-      bar.style.boxShadow = '0 0 0 1.5px rgba(255,255,255,.45)';
     }
     el.appendChild(bar);
     el.style.transform = 'translate(-50%, -50%) translateY(-60px)';
@@ -312,7 +327,6 @@ export class Game {
     r.score += j.score * comboMultiplier(r.combo) * r.mult;
     if (!r.style.noHeal) r.health = Math.min(100, r.health + r.mode.heal[level]);
     this.setCombo(r.combo, true);
-    this.audio.playHit(this.hooks.settings().hitSound);
     this.ring(lane, j.color);
     this.updateHud(r);
     return j;
@@ -413,8 +427,10 @@ export class Game {
 
   /** ageSeconds: how long ago the key actually went down (event timestamp correction) */
   press(lane: Lane, ageSeconds = 0) {
-    this.pressFx(lane);
+    // feedback first, before any judging work: sound + light on every press
+    if (this.run?.ready && !this.run.paused && !this.run.auto) this.audio.playHit(this.hooks.settings().hitSound);
     this.setHeld(lane, true);
+    this.pressFx(lane);
     const r = this.run;
     if (!r || !r.ready || r.paused || r.ended || r.auto) return;
     const t = this.songTime(r) - ageSeconds * r.rate;
@@ -563,7 +579,7 @@ export class Game {
       txt($('game.left.time'), `0:00 / ${fmtTime(chartEnd - r.startAt)}`);
       for (const lane of [1, 2] as Lane[]) {
         txt($(`game.pf.lane${lane}.rec.key`), keyName(settings.keys[lane - 1]));
-        $(`game.pf.lane${lane}.rec`).style.boxShadow = `0 0 0 1.5px ${rgba(LANE_COLORS[lane], 0.45)}`;
+        if (lane === 1) this.applyLook();
       }
       show($('game.pf.flashlight'), set.flashlight);
       show($('game.left.versus'), false);
@@ -683,6 +699,7 @@ export class Game {
           const nt = n.time + r.offset;
           if (t >= nt) {
             this.pressFx(lane);
+            this.audio.playHit(this.hooks.settings().hitSound);
             this.judgeNote(r, lane, n, i, nt);
           }
           break;

@@ -52,7 +52,8 @@ export class AudioEngine {
     if (this.ctx && this.master) this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.02);
   }
 
-  get latency() { return this.ctx ? (this.ctx.outputLatency || this.ctx.baseLatency || 0) : 0; }
+  // what you hear lags the audio clock by the processing (base) latency plus the device (output) latency
+  get latency() { return this.ctx ? (this.ctx.baseLatency || 0) + (this.ctx.outputLatency || 0) : 0; }
   get now() { return this.ctx?.currentTime ?? 0; }
 
   load(song: Song): Promise<AudioBuffer> {

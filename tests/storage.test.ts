@@ -47,3 +47,11 @@ test('save + load round trip', () => {
   assert.equal(save(d, store), true);
   assert.deepEqual(load(store), d);
 });
+
+test('look settings accept hex colors only and clamp line thickness', () => {
+  const d = sanitize({ settings: { laneColors: ['#00ff00', 'red'], chordColor: 'javascript:alert(1)', noteStyle: 'Weird', noteSize: 99 } });
+  assert.deepEqual(d.settings.laneColors, ['#00FF00', DEFAULT_SETTINGS.laneColors[1]]);
+  assert.equal(d.settings.chordColor, DEFAULT_SETTINGS.chordColor);
+  assert.equal(d.settings.noteStyle, 'Glow');
+  assert.ok(d.settings.noteSize <= 32);
+});

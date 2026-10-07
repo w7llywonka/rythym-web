@@ -10,6 +10,7 @@ import {
 } from './config.ts';
 import { importSong } from './custom.ts';
 import { Game, type Run, type RunOpts } from './game.ts';
+import { NOTE_SIZE, NOTE_STYLES, SWATCHES, styleNote } from './look.ts';
 import { currentSet, fmtTime, formatNumber, gradeColor, gradeFor, keyName, levelFromXp, rateText, setMultiplier, setSummary } from './scoring.ts';
 import { load as loadLocal, sanitize, save as saveLocal } from './storage.ts';
 import { soundtrack, trackFromImport } from './tracks.ts';
@@ -184,7 +185,8 @@ async function playPreview(track: Track | null | undefined) {
 // Home
 // ---------------------------------------------------------------------------------------------
 function refreshHome() {
-  html($('home.howto'), `Press <b class="c-cyan">${escapeHtml(keyName(settings().keys[0]))}</b> and <b class="c-pink">${escapeHtml(keyName(settings().keys[1]))}</b> (or tap the buttons) when the lines reach them`);
+  const [c1, c2] = settings().laneColors;
+  html($('home.howto'), `Press <b style="color:${c1}">${escapeHtml(keyName(settings().keys[0]))}</b> and <b style="color:${c2}">${escapeHtml(keyName(settings().keys[1]))}</b> (or tap the buttons) when the lines reach them`);
   const p = data.profile;
   const { level, rest, need } = levelFromXp(p.xp);
   txt($('home.chip.name'), account ? account.username : 'Guest');
@@ -280,8 +282,6 @@ let cards = new Map<Track, HTMLElement>();
 function styleCards() {
   for (const [t, card] of cards) {
     const sel = selectedSong[currentTab] === t;
-    show(card.querySelector('.accent') as HTMLElement, sel);
-    (card.querySelector('.accent') as HTMLElement).style.backgroundColor = t.color1;
     card.style.boxShadow = `0 0 0 1px ${sel ? rgba(t.color1, 0.45) : T.line}`;
     card.style.backgroundColor = sel ? T.bg2 : T.bg1;
   }
@@ -298,7 +298,6 @@ function buildCard(t: Track): HTMLElement {
   const levelText = currentTab === 'Recent' && t.charts[diff] ? `${MODES[diff].label}  LV ${t.charts[diff]!.level}` : `LV ${t.level}`;
   const flags = starFlags(t);
   card.innerHTML = `
-    <div class="f accent" style="left:0;top:22px;width:3px;height:32px;border-radius:2px"></div>
     <div class="f" style="left:12px;top:10px;width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg, ${t.color1}, ${t.color2})">
       <div class="f t a-center v-center" style="left:0;top:11px;width:56px;height:22px;font-size:19px;font-weight:700;letter-spacing:-0.02em"><span class="tx"></span></div>
       <div class="f t a-center v-center" style="left:0;top:33px;width:56px;height:12px;font-size:9px;font-weight:600;letter-spacing:0.1em;color:rgba(255,255,255,.75)"><span class="tx">BPM</span></div>
@@ -309,7 +308,7 @@ function buildCard(t: Track): HTMLElement {
     <div class="f t a-right grade" style="right:18px;top:36px;width:60px;height:26px;font-size:20px;font-weight:700"><span class="tx"></span></div>
     <div class="f stars" style="right:86px;top:46px;width:50px;height:6px">${[0, 1, 2, 3].map(i => `<div class="f" style="left:${i * 12}px;top:0;width:6px;height:6px;border-radius:50%;background:${flags[i] ? STAR_COLORS[i] : T.bg3}"></div>`).join('')}</div>`;
   const tx = (sel: string) => card.querySelector(`${sel} .tx`) as HTMLElement;
-  (card.children[1].children[0].querySelector('.tx') as HTMLElement).textContent = String(t.displayBpm);
+  (card.children[0].children[0].querySelector('.tx') as HTMLElement).textContent = String(t.displayBpm);
   tx('.title').textContent = t.title;
   tx('.sub').textContent = `${t.artist}  ·  ${t.genre}  ·  ${fmtTime(t.displayLength)}`;
   tx('.level').textContent = levelText;
@@ -900,7 +899,13 @@ function refreshSettings() {
   setToggle($('settings.effects.toggle'), settings().effects);
   setToggle($('settings.centerhud.toggle'), settings().centerHud);
   setToggle($('settings.hitzone.toggle'), settings().hitZone);
+  for (let i = 0; i < 2; i++) {
+    const c = settings().laneColors[i];
+    $(`settings.key${i + 1}.dot`).style.backgroundColor = c;
+    $(`settings.key${i + 1}.btn`).style.boxShadow = `0 0 0 1px ${rgba(c, 0.4)}`;
+  }
   game.applyHudLayout();
+  game.applyLook();
   audio.setVolume(settings().musicVolume);
   refreshHome();
 }
@@ -943,13 +948,118 @@ onClick('settings.hitzone.toggle', () => { settings().hitZone = !settings().hitZ
 onClick('settings.offset.calibrate', openCalibration);
 onClick('settings.reset', () => {
   const style = settings();
-  data.settings = { ...DEFAULT_SETTINGS, keys: [...DEFAULT_KEYS], style: style.style, rate: style.rate,
+  data.settings = { ...DEFAULT_SETTINGS, keys: [...DEFAULT_KEYS], laneColors: [...DEFAULT_SETTINGS.laneColors], style: style.style, rate: style.rate,
     hidden: style.hidden, sudden: style.sudden, flashlight: style.flashlight, mirror: style.mirror, random: style.random, wave: style.wave, mines: style.mines };
   listeningKey = null;
   setKeyStatus('Everything reset to default.');
   refreshSettings();
 });
 onClick('settings.close', closeSettings);
+
+// ---------------------------------------------------------------------------------------------
+// Customize (lane / chord colors, line style and thickness)
+// ---------------------------------------------------------------------------------------------
+type LookRow = 'lane1' | 'lane2' | 'chord';
+const lookColor = (row: LookRow) => (row === 'chord' ? settings().chordColor : settings().laneColors[row === 'lane1' ? 0 : 1]);
+
+function renderPreview() {
+  const box = $('custom.preview');
+  box.innerHTML = '';
+  const s = settings();
+  const laneW = 150, gap = 12, x0 = (556 - (laneW * 2 + gap)) / 2;
+  const lanes = [0, 1].map(i => {
+    const lane = document.createElement('div');
+    lane.className = 'prevlane';
+    lane.style.cssText = `left:${x0 + i * (laneW + gap)}px;top:10px;width:${laneW}px;height:130px`;
+    const c = s.laneColors[i];
+    const line = document.createElement('div');
+    line.style.cssText = `position:absolute;left:16px;right:16px;top:110px;height:3px;border-radius:2px;background:${c};box-shadow:0 0 10px ${rgba(c, 0.5)}`;
+    lane.appendChild(line);
+    box.appendChild(lane);
+    return lane;
+  });
+  const note = (lane: number, y: number, color: string) => {
+    const el = document.createElement('div');
+    el.className = 'note';
+    el.style.transform = `translate(-50%, -50%) translateY(${y}px)`;
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    el.appendChild(bar);
+    styleNote(el, bar, color, s.noteStyle, s.noteSize, s.effects);
+    lanes[lane].appendChild(el);
+  };
+  note(0, 22, s.chordColor);
+  note(1, 22, s.chordColor);
+  note(0, 62, s.laneColors[0]);
+  note(1, 92, s.laneColors[1]);
+}
+
+function refreshCustom() {
+  for (const row of ['lane1', 'lane2', 'chord'] as LookRow[]) {
+    const current = lookColor(row).toUpperCase();
+    let matched = false;
+    SWATCHES.forEach((c, i) => {
+      const on = c.toUpperCase() === current;
+      matched ||= on;
+      $(`custom.${row}.sw${i}`).classList.toggle('on', on);
+    });
+    const pick = $(`custom.${row}.pick`) as HTMLInputElement;
+    pick.value = current.toLowerCase();
+    pick.classList.toggle('on', !matched);
+    if (!matched) pick.style.background = current;
+    else pick.style.background = '';
+  }
+  txt($('custom.style.value'), settings().noteStyle);
+  txt($('custom.size.value'), `${settings().noteSize} px`);
+  renderPreview();
+}
+
+function setLookColor(row: LookRow, color: string) {
+  const s = settings();
+  const c = color.toUpperCase();
+  if (row === 'chord') s.chordColor = c;
+  else s.laneColors = row === 'lane1' ? [c, s.laneColors[1]] : [s.laneColors[0], c];
+  refreshCustom();
+  refreshSettings();
+}
+
+function openCustom() {
+  openModal($('custom'));
+  refreshCustom();
+}
+function closeCustom() {
+  queueSave();
+  openSettings();
+}
+for (const row of ['lane1', 'lane2', 'chord'] as LookRow[]) {
+  SWATCHES.forEach((c, i) => onClick(`custom.${row}.sw${i}`, () => setLookColor(row, c)));
+  $(`custom.${row}.pick`).addEventListener('input', e => setLookColor(row, (e.target as HTMLInputElement).value));
+}
+const shiftStyle = (dir: number) => {
+  const i = NOTE_STYLES.indexOf(settings().noteStyle);
+  settings().noteStyle = NOTE_STYLES[(i + dir + NOTE_STYLES.length) % NOTE_STYLES.length];
+  refreshCustom();
+};
+onClick('custom.style.minus', () => shiftStyle(-1));
+onClick('custom.style.plus', () => shiftStyle(1));
+const shiftSize = (dir: number) => {
+  settings().noteSize = Math.min(NOTE_SIZE.max, Math.max(NOTE_SIZE.min, settings().noteSize + dir * NOTE_SIZE.step));
+  refreshCustom();
+};
+onClick('custom.size.minus', () => shiftSize(-1));
+onClick('custom.size.plus', () => shiftSize(1));
+onClick('custom.reset', () => {
+  const s = settings();
+  s.laneColors = [...DEFAULT_SETTINGS.laneColors];
+  s.chordColor = DEFAULT_SETTINGS.chordColor;
+  s.noteStyle = DEFAULT_SETTINGS.noteStyle;
+  s.noteSize = DEFAULT_SETTINGS.noteSize;
+  refreshCustom();
+  refreshSettings();
+});
+onClick('custom.done', closeCustom);
+onClick('custom.close', closeCustom);
+onClick('settings.customize', openCustom);
 
 // ---------------------------------------------------------------------------------------------
 // Accounts (log in / sign up / manage)
@@ -1172,6 +1282,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'Escape' && modal) {
     if (modal === $('settings')) closeSettings();
     else if (modal === $('style')) closeStyle();
+    else if (modal === $('custom')) closeCustom();
     else if (modal !== $('pause')) closeModal();
     return;
   }
@@ -1238,7 +1349,7 @@ function frame() {
     pulse = Math.exp(-phase * 6);
   }
   if (currentScreen === 'home') $('home.logo').style.setProperty('--s', String(1 + 0.035 * pulse));
-  else if (currentScreen === 'game') $('game.pf').style.setProperty('--pulse', String(0.15 + 0.55 * pulse));
+  else if (currentScreen === 'game') $('game.pf.pulse').style.opacity = (0.15 + 0.85 * pulse).toFixed(3);
   requestAnimationFrame(frame);
 }
 

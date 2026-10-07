@@ -29,6 +29,7 @@ You can see how close each hit was:
   - scroll speed 0.5–3×, audio offset ±300 ms with a tap-along calibration
   - music volume, hit sounds (Tick, Mania, Kick, Clap)
   - effects, the hit zone, and an optional combo in the centre of the playfield
+  - **Customize**: Button 1 / Button 2 / chord colors (presets or any color), line style (Glow, Flat, Outline, Classic) and line thickness, with a live preview
 
 Timing windows, health drain and fall speed tighten with each tier:
 

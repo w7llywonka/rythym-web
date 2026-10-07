@@ -5,6 +5,7 @@ export type Grade = 'SS' | 'S' | 'A' | 'B' | 'C' | 'D' | 'F';
 export type StyleName = 'Classic' | 'Hardcore' | 'SuddenDeath' | 'Playground' | 'Practice';
 export type ModKey = 'hidden' | 'sudden' | 'flashlight' | 'mirror' | 'random' | 'wave' | 'mines' | 'auto';
 export type HitSound = 'OFF' | 'TICK' | 'MANIA' | 'KICK' | 'CLAP';
+export type NoteStyle = 'Glow' | 'Flat' | 'Outline' | 'Classic';
 
 /** Onset analysis: one digit (0-9) per 16th step for kick/bass, snare/mids and hats/highs. */
 export interface Analysis { bpm: number; offset: number; low: string; mid: string; high: string; gridFit: number }
@@ -38,7 +39,8 @@ export interface PlaySet {
 
 export interface Settings {
   keys: [string, string, string];
-  scrollSpeed: number; offset: number; musicVolume: number; effects: boolean; centerHud: boolean; hitZone: boolean; hitSound: HitSound;
+  scrollSpeed: number; offset: number; musicVolume: number; effects: boolean; centerHud: boolean; hitZone: boolean;
+  laneColors: [string, string]; chordColor: string; noteStyle: NoteStyle; noteSize: number; hitSound: HitSound;
   style: StyleName; rate: number;
   hidden: boolean; sudden: boolean; flashlight: boolean; mirror: boolean; random: boolean; wave: boolean; mines: boolean;
 }
