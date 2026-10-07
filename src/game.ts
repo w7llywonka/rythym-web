@@ -41,6 +41,13 @@ const LANE_X: Record<number, number> = { 1: 12, 2: 176 };
 const LANE_W = 156;
 const HIT_Y = 576 - 14 - 104 / 2; // receptor centre inside the lane
 
+/** the closest step of a beat-tracked grid (imports) */
+function nearestGridTime(grid: number[], t: number) {
+  let lo = 0, hi = grid.length - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (grid[mid] <= t) lo = mid; else hi = mid; }
+  return Math.abs(grid[lo] - t) <= Math.abs(grid[hi] - t) ? grid[lo] : grid[hi];
+}
+
 export class Game {
   run: Run | null = null;
   private busy = false;
@@ -508,7 +515,7 @@ export class Game {
           const aEnd = a.endTime ?? a.time;
           if (b.time - aEnd >= 0.5 && rng() < 0.4) {
             const mid = (aEnd + b.time) / 2;
-            const snapped = track.offset + Math.round((mid - track.offset) / s16) * s16;
+            const snapped = track.grid ? nearestGridTime(track.grid, mid) : track.offset + Math.round((mid - track.offset) / s16) * s16;
             if (snapped - aEnd >= 0.18 && b.time - snapped >= 0.18) mines.push({ time: snapped, lane, chord: false, mine: true });
           }
         }
@@ -658,9 +665,11 @@ export class Game {
         if (left <= 0) {
           r.resumeAt = undefined;
           r.paused = false;
+          // same anchoring as the first start: songTime() already subtracts the output latency.
+          // Paused during the countdown (before 0:00)? Then the music starts when the countdown ends.
           r.anchorPos = r.pausedAt;
-          r.anchorCtx = this.audio.now + this.audio.latency;
-          if (r.buffer) this.audio.start(r.buffer, this.audio.now, r.pausedAt, r.rate, 1);
+          r.anchorCtx = this.audio.now;
+          if (r.buffer) this.audio.start(r.buffer, r.anchorCtx + Math.max(0, -r.pausedAt) / r.rate, Math.max(0, r.pausedAt), r.rate, 1);
           this.setCountdown('');
           t = this.songTime(r);
         } else {
