@@ -2,6 +2,18 @@
 // every request carries the X-LineRush header, which the server requires as a CSRF guard.
 
 export interface User { username: string; createdAt: number }
+
+export interface VsResult { outcome: 'win' | 'lose' | 'draw'; reason: 'done' | 'forfeit' | 'timeout'; you: number; them: number }
+export interface VsMatch {
+  id: string; songId: string; diff: string; startAt: number; endBy: number; opponent: string;
+  opp: { score: number; combo: number; health: number; accuracy: number } | null; oppDone: number | null; result: VsResult | null;
+}
+export type VsEvent = { type: 'declined'; by: string } | { type: 'react'; i: number } | { type: 'opponentDone'; score: number } | { type: 'forfeit' } | { type: 'start'; matchId: string };
+export interface VsPoll {
+  now: number; match: VsMatch | null; events: VsEvent[];
+  incoming: { from: string; songId: string; diff: string; expiresIn: number } | null;
+  online?: { name: string; busy: boolean }[];
+}
 export interface ApiResult<T> { ok: boolean; status: number; data?: T; error?: string }
 
 async function call<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown): Promise<ApiResult<T>> {
@@ -32,6 +44,19 @@ export const api = {
   deleteAccount: (password: string) => call<{ ok: true }>('POST', 'auth/delete', { password }),
   loadSave: () => call<{ data: unknown; updatedAt: number | null }>('GET', 'save'),
   putSave: (data: unknown) => call<{ ok: true; updatedAt: number }>('PUT', 'save', { data }),
+  // 1v1
+  vsPoll: (query: { lobby?: boolean; match?: string }) => {
+    const q = new URLSearchParams();
+    if (query.lobby) q.set('lobby', '1');
+    if (query.match) q.set('match', query.match);
+    return call<VsPoll>('GET', `versus/poll${q.size ? `?${q}` : ''}`);
+  },
+  vsChallenge: (to: string, songId: string, diff: string) => call<{ ok: true; to: string }>('POST', 'versus/challenge', { to, songId, diff }),
+  vsRespond: (from: string, accept: boolean) => call<{ ok: true; now?: number; match?: VsMatch }>('POST', 'versus/respond', { from, accept }),
+  vsProgress: (matchId: string, p: { score: number; combo: number; health: number; accuracy: number }) => call<VsPoll>('POST', 'versus/progress', { matchId, ...p }),
+  vsReact: (matchId: string, i: number) => call<{ ok: true }>('POST', 'versus/react', { matchId, i }),
+  vsFinal: (matchId: string, score: number, cleared: boolean) => call<{ ok: true; match: VsMatch }>('POST', 'versus/final', { matchId, score, cleared }),
+  vsForfeit: (matchId: string) => call<{ ok: true }>('POST', 'versus/forfeit', { matchId }),
 };
 
 /** Same rules the server enforces, checked early for friendlier messages. */

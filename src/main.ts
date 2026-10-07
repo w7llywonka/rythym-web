@@ -1,7 +1,7 @@
 // LINE RUSH (web) - controller. Screens: Home -> Select -> Game -> Results, plus Pause / Settings / Style /
 // Calibrate / Leaderboard / Profile / 1v1 / Account modals. Mirrors the Roblox client controller.
 import './style.css';
-import { api, validatePassword, validateUsername, type User } from './account.ts';
+import { api, validatePassword, validateUsername, type User, type VsMatch, type VsPoll } from './account.ts';
 import { ease, fade, pop, tween } from './anim.ts';
 import { AudioEngine } from './audio.ts';
 import {
@@ -74,6 +74,11 @@ function queueSave() {
   }, 1200);
 }
 window.addEventListener('pagehide', () => {
+  // closing the tab mid-battle counts as leaving
+  const r = game.run;
+  if (r?.opts?.versus && !r.ended) {
+    void fetch('/api/versus/forfeit', { method: 'POST', keepalive: true, credentials: 'same-origin', headers: { 'X-LineRush': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ matchId: r.opts.versus.matchId }) }).catch(() => {});
+  }
   if (saveTimer) {
     clearTimeout(saveTimer);
     if (account) void fetch('/api/save', { method: 'PUT', keepalive: true, credentials: 'same-origin', headers: { 'X-LineRush': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ data }) }).catch(() => {});
@@ -587,21 +592,17 @@ onClick('profile.account', () => {
   else openAuth();
 });
 
-// 1v1 lobby (needs the online server, which the web version doesn't have yet)
-onClick('home.versus', () => {
-  const t = selectedSong[currentTab] ?? selectedSong.Easy;
-  txt($('versus.song.value'), t ? `${t.title}  ·  ${MODES[chartFor(t).diff].label}` : '-');
-  txt($('versus.status'), '1v1 battles need the online server, which isn\'t available on the web version yet.');
-  openModal($('versus'));
-});
-onClick('versus.close', closeModal);
 
 // ---------------------------------------------------------------------------------------------
 // Gameplay
 // ---------------------------------------------------------------------------------------------
 const game = new Game(audio, {
   settings,
-  onFinish: (r, cleared) => { game.stop(); void showResults(r, cleared); },
+  onFinish: (r, cleared) => {
+    game.stop();
+    if (r.opts?.versus) vsFinal(r, cleared);
+    void showResults(r, cleared);
+  },
   onLoadFail: () => { showToast("Couldn't load that song. Try again."); void go('select'); },
   showGame: (setup, quick) => {
     if (quick && currentScreen === 'game') { setup(); return Promise.resolve(); }
@@ -614,7 +615,7 @@ async function startRun(t: Track | null | undefined, diff?: Diff | null, quick =
   await audio.unlock();
   diff = (diff && t.charts[diff]) ? diff : t.difficulty;
   closeModal();
-  lastSong = t; lastChart = diff; lastOpts = opts;
+  lastSong = t; lastChart = diff; lastOpts = opts?.versus ? undefined : opts;
   // remember it in Recent (newest first, one entry per song)
   data.recent = [{ id: t.id, chart: diff }, ...data.recent.filter(e => e.id !== t.id)].slice(0, K.MAX_RECENT);
   queueSave();
@@ -626,13 +627,17 @@ async function startRun(t: Track | null | undefined, diff?: Diff | null, quick =
 
 function quickRestart() {
   const r = game.run;
-  if (r && !transitioning) void startRun(r.track, r.chartDiff, true, r.opts);
+  if (r && !transitioning && !r.opts?.versus) void startRun(r.track, r.chartDiff, true, r.opts);
 }
 
 function pauseRun() {
   if (game.pause()) openModal($('pause'));
 }
-onClick('game.left.pause', pauseRun);
+onClick('game.left.pause', () => {
+  // no pausing in a 1v1: the button forfeits instead
+  if (game.run?.opts?.versus) vsAskForfeit();
+  else pauseRun();
+});
 onClick('pause.resume', () => { closeModal(); game.resume(); });
 onClick('pause.restart', () => { const r = game.run; if (r) void startRun(r.track, r.chartDiff, true, r.opts); });
 onClick('pause.quit', () => {
@@ -779,7 +784,8 @@ async function showResults(r: Run, cleared: boolean) {
     txt($('results.panel.title'), t.title);
     txt($('results.panel.info'), `${mode.label}  ·  ${r.summary}  ·  LV ${t.charts[r.chartDiff]!.level}`);
     txt($('results.panel.xp'), xpGained > 0 ? `+${formatNumber(xpGained)} XP  ·  LV ${levelAfter}` : '');
-    html($('results.panel.versus'), '');
+    vs.onResults = !!r.opts?.versus;
+    vsBanner();
     const score = Math.floor(r.score);
     tween($('results.panel.score'), 'count', 0, score, 1.1, v => txt($('results.panel.score'), formatNumber(v)), ease.quart);
     txt($('results.panel.accuracy.value'), `${acc.toFixed(2)}%`);
@@ -810,12 +816,281 @@ async function showResults(r: Run, cleared: boolean) {
   void playPreview(t);
 }
 
-onClick('results.panel.retry', () => void startRun(lastSong, lastChart, false, lastOpts));
+onClick('results.panel.retry', () => { vsLeaveResults(); void startRun(lastSong, lastChart, false, lastOpts); });
 onClick('results.panel.continue', () => {
   if (transitioning) return;
+  vsLeaveResults();
   if (lastOpts?.weekly !== undefined) void go('home');
   else void go('select', () => setTab(currentTab, true));
 });
+
+// ---------------------------------------------------------------------------------------------
+// 1v1 (port of the Roblox versus client): lobby of online players, challenge pop-up, shared start,
+// live opponent panel, reactions on keys 1-4, result banner. Talks to /api/versus/* by polling.
+// ---------------------------------------------------------------------------------------------
+const VS_REACTIONS = ['🔥', '😂', '😤', 'GG'];
+const VS_REACT_KEYS: Record<string, number> = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Numpad1: 1, Numpad2: 2, Numpad3: 3, Numpad4: 4 };
+const VS_SET: PlaySet = { style: 'Classic', rate: 1, hidden: false, sudden: false, flashlight: false, mirror: false, random: false, wave: false, mines: false, auto: false };
+const vs: {
+  offset: number; // server clock - local clock (ms)
+  timer?: number; busy: boolean; lastSend: number; lastReact: number; onResults: boolean;
+  incoming: { from: string; songId: string; diff: string; expiresAt: number } | null;
+  current: { matchId: string; opponent: string; oppScore: number; result: VsMatch['result'] } | null;
+} = { offset: 0, busy: false, lastSend: 0, lastReact: 0, onResults: false, incoming: null, current: null };
+const serverNow = () => Date.now() + vs.offset;
+
+function vsLobbyTrack() {
+  const t = selectedSong[currentTab] ?? selectedSong.Easy;
+  return t ? { t, diff: chartFor(t).diff } : null;
+}
+
+function vsRenderLobby(online?: { name: string; busy: boolean }[]) {
+  const pick = vsLobbyTrack();
+  txt($('versus.song.value'), pick ? `${pick.t.title}  ·  ${MODES[pick.diff].label}` : '-');
+  const list = $('versus.list');
+  const guest = !account;
+  show($('versus.login'), guest && !accountsOffline);
+  show(list, !guest);
+  if (accountsOffline) return txt($('versus.status'), "1v1 needs the online server, which isn't set up here.");
+  if (guest) return txt($('versus.status'), 'Log in to battle other players.');
+  if (!online) return;
+  list.innerHTML = '';
+  for (const p of online) {
+    const row = document.createElement('div');
+    row.className = 'vsrow';
+    const name = document.createElement('span');
+    name.textContent = p.name;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'vsbtn';
+    btn.textContent = p.busy ? 'IN A BATTLE' : 'CHALLENGE';
+    btn.disabled = p.busy;
+    btn.addEventListener('click', () => void vsChallenge(p.name));
+    row.append(name, btn);
+    list.appendChild(row);
+  }
+  const status = $('versus.status');
+  if (!online.length) txt(status, "Nobody else is online right now. Send a friend linerush.world!");
+  else if (status.dataset.sticky !== '1') txt(status, '');
+}
+
+async function vsChallenge(name: string) {
+  const pick = vsLobbyTrack();
+  const status = $('versus.status');
+  status.dataset.sticky = '1';
+  if (!pick) return txt(status, 'Pick a song in Song Select first.');
+  if (pick.t.custom) return txt(status, "Imported songs only exist on your computer. Pick a Line Rush song for 1v1.");
+  txt(status, 'Sending challenge...');
+  const res = await api.vsChallenge(name, pick.t.id, pick.diff);
+  txt(status, res.ok ? `Challenge sent to ${res.data!.to}. Waiting for them to accept...` : res.error ?? 'Something went wrong.');
+}
+
+function vsShowPopup() {
+  const inc = vs.incoming;
+  const pop = $('challenge');
+  if (!inc) { show(pop, false); return; }
+  const t = tracksById.get(inc.songId);
+  const mode = MODES[inc.diff as Diff];
+  html($('challenge.text'), `<b>${escapeHtml(inc.from)}</b> wants to battle on <b>${escapeHtml(t?.title ?? '?')}</b> [${mode?.label ?? ''}]`);
+  if (pop.hidden) {
+    show(pop, true);
+    tween(pop, 'slide', -150, 20, 0.3, v => { pop.style.top = `${v}px`; }, ease.back);
+  }
+}
+
+async function vsRespond(accept: boolean) {
+  const inc = vs.incoming;
+  vs.incoming = null;
+  vsShowPopup();
+  if (!inc) return;
+  const res = await api.vsRespond(inc.from, accept);
+  if (!res.ok) return showToast(res.error ?? 'That challenge expired.');
+  if (accept && res.data?.match) vsBegin(res.data.match);
+}
+
+function vsBegin(m: VsMatch) {
+  const t = tracksById.get(m.songId);
+  if (!t) { void api.vsForfeit(m.id); return showToast("Couldn't load that song."); }
+  vs.incoming = null;
+  vsShowPopup();
+  vs.current = { matchId: m.id, opponent: m.opponent, oppScore: 0, result: null };
+  txt($('game.left.versus.opponent'), m.opponent);
+  txt($('game.left.versus.score'), '0');
+  txt($('game.left.versus.combo'), '');
+  txt($('game.left.versus.lead'), '');
+  txt($('game.left.versus.sent'), '');
+  txt($('game.left.versus.bubble'), '');
+  $('game.left.versus.health.fill').style.width = '100%';
+  if (modal) closeModal();
+  if (game.run) game.stop();
+  showToast(`1v1 vs ${m.opponent}. Get ready!`);
+  void startRun(t, m.diff as Diff, false, {
+    set: VS_SET,
+    versus: { matchId: m.id, opponent: m.opponent, leadIn: () => (m.startAt - serverNow()) / 1000 },
+  });
+}
+
+function vsApply(d: VsPoll, sentAt: number) {
+  // keep a smoothed estimate of the server clock (both players start on its timeline)
+  const sample = d.now - (sentAt + Date.now()) / 2;
+  vs.offset = vs.offset === 0 ? sample : vs.offset * 0.8 + sample * 0.2;
+  if (d.incoming && !vs.current) {
+    vs.incoming = { from: d.incoming.from, songId: d.incoming.songId, diff: d.incoming.diff, expiresAt: Date.now() + d.incoming.expiresIn };
+  } else if (!d.incoming) vs.incoming = null;
+  vsShowPopup();
+  for (const e of d.events) {
+    if (e.type === 'declined') {
+      $('versus.status').dataset.sticky = '1';
+      txt($('versus.status'), `${e.by} declined.`);
+      showToast(`${e.by} declined your challenge`);
+    } else if (e.type === 'react') vsBubble(e.i);
+    else if (e.type === 'opponentDone') { txt($('game.left.versus.combo'), 'finished'); txt($('game.left.versus.score'), formatNumber(e.score)); }
+    else if (e.type === 'forfeit' && vs.current) showToast(`${vs.current.opponent} left the battle. You win!`);
+  }
+  const m = d.match;
+  if (m && !vs.current && !m.result && serverNow() < m.endBy) vsBegin(m);
+  if (m && vs.current && m.id === vs.current.matchId) {
+    if (m.opp) {
+      vs.current.oppScore = m.oppDone ?? m.opp.score;
+      txt($('game.left.versus.score'), formatNumber(vs.current.oppScore));
+      if (m.oppDone === null) txt($('game.left.versus.combo'), m.opp.combo >= 3 ? `${m.opp.combo} combo` : '');
+      const hp = Math.min(1, Math.max(0, m.opp.health / 100));
+      const fill = $('game.left.versus.health.fill');
+      fill.style.width = `${hp * 100}%`;
+      fill.style.backgroundColor = hp > 0.5 ? T.green : hp > 0.25 ? T.gold : T.red;
+    }
+    if (m.result && !vs.current.result) {
+      vs.current.result = m.result;
+      if (currentScreen === 'results' && vs.onResults) vsBanner();
+      if (m.result.outcome === 'win') queueToast(`1V1 WIN vs ${vs.current.opponent}!`);
+      else if (currentScreen !== 'results' && !game.run) showToast(m.result.outcome === 'lose' ? `1v1: ${vs.current.opponent} won` : '1v1: draw');
+      if (currentScreen !== 'results' && !game.run) vs.current = null;
+    }
+  }
+  if (modal === $('versus')) vsRenderLobby(d.online);
+}
+
+async function vsTick() {
+  vs.timer = undefined;
+  let next = 4000;
+  if (account && !accountsOffline && !vs.busy) {
+    vs.busy = true;
+    const sentAt = Date.now();
+    const r = game.run;
+    try {
+      if (r?.opts?.versus && r.ready && !r.ended && vs.current) {
+        // live score out, opponent's score back, in one request
+        const res = await api.vsProgress(r.opts.versus.matchId, {
+          score: Math.floor(r.score), combo: r.combo, health: r.health, accuracy: game.accuracyOf(r),
+        });
+        if (res.ok && res.data) vsApply(res.data, sentAt);
+        const lead = Math.floor(r.score - vs.current.oppScore);
+        const el = $('game.left.versus.lead');
+        txt(el, lead >= 0 ? `+${formatNumber(lead)} AHEAD` : `${formatNumber(-lead)} BEHIND`);
+        el.style.color = lead >= 0 ? T.green : T.red;
+        next = 500;
+      } else {
+        const res = await api.vsPoll({ lobby: modal === $('versus'), match: vs.current && !vs.current.result ? vs.current.matchId : undefined });
+        if (res.ok && res.data) vsApply(res.data, sentAt);
+        else if (res.status === 401) handleSignedOut();
+        next = vs.current && !vs.current.result ? 1000 : modal === $('versus') || vs.incoming ? 2000 : 4000;
+      }
+    } finally {
+      vs.busy = false;
+    }
+    if (document.hidden && !game.run) next = 10000;
+  }
+  vsSchedule(next);
+}
+function vsSchedule(ms: number) {
+  if (vs.timer) clearTimeout(vs.timer);
+  vs.timer = window.setTimeout(() => void vsTick(), ms);
+}
+
+function vsBubble(i: number) {
+  const b = $('game.left.versus.bubble');
+  const text = VS_REACTIONS[i - 1] ?? '';
+  txt(b, text);
+  b.style.opacity = '1';
+  pop(b, 1.6, 0.25, ease.back);
+  fade(b, 0, 0.3, 1.6);
+  if (currentScreen === 'results') showToast(`${vs.current?.opponent ?? 'Opponent'}: ${text}`);
+}
+
+function vsReact(i: number) {
+  const matchId = vs.current?.matchId;
+  if (!matchId || performance.now() - vs.lastReact < 800) return;
+  vs.lastReact = performance.now();
+  void api.vsReact(matchId, i);
+  txt($('game.left.versus.sent'), `you sent ${VS_REACTIONS[i - 1]}`);
+  if (currentScreen === 'results') showToast(`You: ${VS_REACTIONS[i - 1]}`);
+}
+
+function vsFinal(r: Run, cleared: boolean) {
+  const v = r.opts?.versus;
+  if (!v) return;
+  void api.vsFinal(v.matchId, Math.floor(r.score), cleared).then(res => {
+    if (res.ok && res.data) vsApply({ now: serverNow(), match: res.data.match, events: [], incoming: null }, Date.now());
+  });
+  vsSchedule(1000);
+}
+
+function vsAskForfeit() {
+  const r = game.run;
+  const v = r?.opts?.versus;
+  if (!v || !window.confirm(`Leave the 1v1 against ${v.opponent}? It counts as a loss.`)) return;
+  void api.vsForfeit(v.matchId);
+  vs.current = null;
+  game.stop();
+  void go('select', () => setTab(currentTab, true));
+  void playPreview(selectedSong[currentTab]);
+}
+
+function vsBanner() {
+  const label = $('results.panel.versus');
+  const c = vs.current;
+  if (!c || !vs.onResults) return html(label, '');
+  const res = c.result;
+  if (!res) return html(label, `<span style="color:${T.muted};font-size:15px">WAITING FOR ${escapeHtml(c.opponent.toUpperCase())}...</span>`);
+  const head = res.outcome === 'win' ? `<span style="color:${T.green}">YOU WIN!</span>` : res.outcome === 'lose' ? `<span style="color:${T.red}">YOU LOSE</span>` : 'DRAW';
+  const why = res.reason === 'forfeit' && res.outcome === 'win' ? '  (opponent left)' : res.reason === 'timeout' ? '  (timed out)' : '';
+  html(label, `${head}<br><span style="color:${T.muted};font-size:13px;font-weight:600">${formatNumber(res.you)} vs ${formatNumber(res.them)}  ·  ${escapeHtml(c.opponent)}${why}</span>`);
+}
+
+/** leaving the results screen: a settled battle is done; an unsettled one keeps polling and toasts the result */
+function vsLeaveResults() {
+  vs.onResults = false;
+  if (vs.current?.result) vs.current = null;
+}
+
+function vsReset() {
+  vs.current = null;
+  vs.incoming = null;
+  vsShowPopup();
+}
+
+function vsOpenLobby() {
+  $('versus.status').dataset.sticky = '';
+  txt($('versus.status'), account ? 'Looking for players...' : '');
+  $('versus.list').innerHTML = '';
+  vsRenderLobby();
+  openModal($('versus'));
+  vsSchedule(0);
+}
+
+onClick('home.versus', vsOpenLobby);
+onClick('versus.close', closeModal);
+onClick('versus.login', () => openAuth('login'));
+onClick('challenge.accept', () => void vsRespond(true));
+onClick('challenge.decline', () => void vsRespond(false));
+// pop-up countdown
+setInterval(() => {
+  const inc = vs.incoming;
+  if (!inc) return;
+  const left = Math.ceil((inc.expiresAt - Date.now()) / 1000);
+  if (left <= 0) { vs.incoming = null; vsShowPopup(); return; }
+  txt($('challenge.timer'), `${left}s`);
+}, 250);
 
 // ---------------------------------------------------------------------------------------------
 // Calibration (tap along to a clean track, measure how late you hear/press)
@@ -1131,6 +1406,7 @@ async function signedIn(user: User, fresh: boolean) {
     await api.putSave(data);
   }
   syncState = 'Progress is saved to your account';
+  vsSchedule(300);
   closeModal();
   showToast(fresh ? `Welcome to Line Rush, ${user.username}!` : `Welcome back, ${user.username}!`);
   afterDataChange();
@@ -1138,6 +1414,7 @@ async function signedIn(user: User, fresh: boolean) {
 
 function handleSignedOut() {
   account = null;
+  vsReset();
   data = loadLocal();
   afterDataChange();
 }
@@ -1269,6 +1546,11 @@ window.addEventListener('keydown', e => {
     else if (e.code === 'Escape') closeCalibration();
     return;
   }
+  if (vs.current && (currentScreen === 'game' || currentScreen === 'results') && !keys.includes(e.code)) {
+    const idx = VS_REACT_KEYS[e.code];
+    if (idx && !e.repeat) { e.preventDefault(); vsReact(idx); return; }
+  }
+  if (currentScreen === 'game' && game.run?.opts?.versus && e.code === 'Escape') { vsAskForfeit(); return; }
   if (currentScreen === 'game' && game.run) {
     const lane = e.code === keys[0] ? 1 : e.code === keys[1] ? 2 : 0;
     if (lane) {

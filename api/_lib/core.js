@@ -10,6 +10,7 @@
 // - Changing your password logs out every other device.
 
 import { randomBytes, scrypt as scryptCb, createHash, timingSafeEqual } from 'node:crypto';
+import { versusRoutes } from './versus.js';
 
 const SESSION_DAYS = 30;
 const SESSION_SECONDS = SESSION_DAYS * 86400;
@@ -191,6 +192,7 @@ export function createAuth(store, options = {}) {
       if (!(await verifyPassword(req.body.password, s.user))) throw new HttpError(403, 'That password is wrong.');
       await revokeAll(lower);
       await store.del(`user:${lower}`, `save:${lower}`);
+      await store.zrem('online', s.user.username);
       return { body: { ok: true }, session: null };
     },
 
@@ -215,8 +217,10 @@ export function createAuth(store, options = {}) {
     },
   };
 
+  Object.assign(routes, versusRoutes(store, { now, limit, requireSession, HttpError }));
+
   /**
-   * @param {{method:string, path:string, headers:Record<string,string|undefined>, rawBody:string, ip:string, secure:boolean}} req
+   * @param {{method:string, path:string, query?:Record<string,string>, headers:Record<string,string|undefined>, rawBody:string, ip:string, secure:boolean}} req
    * @returns {Promise<{status:number, headers:Record<string,string|string[]>, body:string}>}
    */
   return async function handle(req) {
@@ -248,6 +252,7 @@ export function createAuth(store, options = {}) {
         if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) throw new HttpError(400, 'Invalid JSON.');
       }
       req.token = parseCookies(h.cookie)[cookieName];
+      req.query = req.query ?? {};
 
       const out = await route(req);
       const extra = {};
@@ -296,7 +301,9 @@ export async function fromNode(req, path, { trustProxy }) {
   const host = String(headers.host ?? '');
   const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host);
   const secure = trustProxy ? !local : false;
-  return { method: req.method, path, headers, rawBody: Buffer.concat(chunks).toString('utf8'), ip, secure };
+  const query = Object.fromEntries(new URL(req.url ?? '/', 'http://x').searchParams);
+  delete query.route;
+  return { method: req.method, path, query, headers, rawBody: Buffer.concat(chunks).toString('utf8'), ip, secure };
 }
 
 export function sendNode(res, out) {

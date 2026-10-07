@@ -116,3 +116,10 @@ button.f:focus-visible { outline: 2px solid rgba(43, 212, 255, .7); outline-offs
 .tickmark { position: absolute; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
 .gbar { position: absolute; bottom: 0; }
 .anchor-bottom { top: auto !important; bottom: 0; transform: none !important; }
+
+/* 1v1 lobby */
+.vsrow { display: flex; align-items: center; justify-content: space-between; height: 52px; padding: 0 8px 0 16px; margin: 0 6px 8px 0; background: #15151B; border-radius: 12px; font-size: 15px; font-weight: 600; }
+.vsrow span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vsbtn { height: 36px; padding: 0 18px; border: 0; border-radius: 10px; background: #F4F4F6; color: #08080A; font: 700 12px 'Inter', sans-serif; letter-spacing: .08em; cursor: pointer; transition: filter .15s; }
+.vsbtn:hover { filter: brightness(.9); }
+.vsbtn:disabled { background: #1D1D25; color: #52525C; cursor: default; filter: none; }

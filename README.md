@@ -40,7 +40,9 @@ Timing windows, health drain and fall speed tighten with each tier:
 
 Perfect, Great and Good score 300/200/100. Combos of 10/25/50 give ×2/×3/×4. Grades: SS is all Perfect; otherwise S ≥95%, A ≥90%, B ≥80%, C ≥70%, D below that, and F if you fail.
 
-Online-only Roblox features don't have a server here yet: the global leaderboards, King of the Hill, the cross-server live feed and 1v1. Those panels say so. The live feed shows your own big plays.
+**1v1** (needs an account): open 1V1 on the home screen to see who's online and challenge them on the song you have selected. They get a pop-up for 20 seconds; once accepted, you both start the same chart at the same server moment, see each other's live score, combo and health, and can send reactions with keys 1–4 (🔥 😂 😤 GG). No pausing; leaving counts as a forfeit. Highest score wins.
+
+Still to come from the Roblox version: global leaderboards, King of the Hill and the cross-server live feed (the live feed currently shows your own big plays).
 
 ## Accounts
 

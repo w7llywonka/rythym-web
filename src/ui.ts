@@ -258,7 +258,15 @@ export function buildUI(app: HTMLElement) {
   label(left, 'time', { text: '0:00 / 0:00', size: 13, color: T.muted, x: 0, y: 204, w: 300, h: 16 });
   const vs = frame(left, 'versus', { x: 0, y: 240, w: 320, h: 150, bg: T.bg1, r: 14, stroke: T.line, hidden: true });
   label(vs, 'label', { text: 'VS', font: 'black', size: 12, color: T.pink, x: 14, y: 10, w: 40, h: 14 });
-  label(vs, 'opponent', { text: 'Opponent', font: 'black', size: 16, x: 14, y: 26, w: 200, h: 20 });
+  label(vs, 'opponent', { text: 'Opponent', font: 'black', size: 16, truncate: true, x: 14, y: 26, w: 190, h: 20 });
+  label(vs, 'lead', { text: '', font: 'black', size: 11, align: 'right', ax: 1, x: [1, -14], y: 10, w: 140, h: 14 });
+  label(vs, 'score', { text: '0', font: 'black', size: 26, x: 14, y: 50, w: 200, h: 30 });
+  label(vs, 'combo', { text: '', font: 'bold', size: 12, color: T.muted, align: 'right', ax: 1, x: [1, -14], y: 58, w: 120, h: 16 });
+  const vh = frame(vs, 'health', { x: 14, y: 88, w: 292, h: 4, bg: T.bg3, r: 2, clip: true });
+  frame(vh, 'fill', { w: [1, 0], h: [1, 0], bg: T.green, r: 2 });
+  label(vs, 'reactions', { text: '1 🔥   2 😂   3 😤   4 GG', font: 'bold', size: 11, color: T.dim, x: 14, y: 102, w: 292, h: 16 });
+  label(vs, 'sent', { text: '', font: 'bold', size: 12, color: T.muted, x: 14, y: 122, w: 292, h: 16 });
+  label(vs, 'bubble', { text: '', font: 'black', size: 30, align: 'center', ay: 0.5, x: [1, 12], y: [0.35, 0], w: 90, h: 44, cls: 'pop' });
 
   const right = frame(game, 'right', { x: 770, y: 20, w: 290, h: 600 });
   label(right, 'score', { text: '0', font: 'black', size: 46, align: 'right', x: 0, y: 10, w: 290, h: 52 });
@@ -490,13 +498,23 @@ export function buildUI(app: HTMLElement) {
   // 1v1 lobby
   const vp = panel(overlay, 'versus', 560, 540);
   label(vp, 'title', { text: '1v1 battle', font: 'black', size: 26, x: 32, y: 26, w: 400, h: 36 });
-  label(vp, 'info', { text: 'Challenge someone in this server. You both play the same chart at the same time. Highest score wins.', font: 'med', size: 13, color: T.muted, wrap: true, valign: 'top', x: 32, y: 72, w: 496, h: 36 });
+  label(vp, 'info', { text: "Challenge someone who's online right now. You both play the same chart at the same moment. Highest score wins.", font: 'med', size: 13, color: T.muted, wrap: true, valign: 'top', x: 32, y: 72, w: 496, h: 36 });
   const songRow = frame(vp, 'song', { x: 32, y: 118, w: 496, h: 56, bg: T.bg2, r: 12 });
   label(songRow, 'label', { text: 'SONG', font: 'black', size: 11, color: T.muted, x: 16, w: 60, h: 56 });
   label(songRow, 'value', { text: '-', font: 'black', size: 16, truncate: true, x: 70, w: 300, h: 56 });
   label(songRow, 'hint', { text: 'pick it in Song Select', font: 'med', size: 11, color: T.dim, align: 'right', ax: 1, x: [1, -16], w: 140, h: 56 });
-  label(vp, 'listheader', { text: 'PLAYERS IN THIS SERVER', font: 'black', size: 11, color: T.muted, x: 32, y: 190, w: 300, h: 14 });
-  label(vp, 'status', { text: '', font: 'med', size: 14, color: T.muted, align: 'center', wrap: true, x: 32, y: 300, w: 496, h: 60 });
+  label(vp, 'listheader', { text: 'PLAYERS ONLINE', font: 'black', size: 10, color: T.muted, x: 32, y: 190, w: 300, h: 14 });
+  frame(vp, 'list', { x: 32, y: 210, w: 496, h: 268, scroll: true });
+  label(vp, 'status', { text: '', font: 'med', size: 14, color: T.muted, align: 'center', wrap: true, x: 32, y: 486, w: 496, h: 36 });
+  button(vp, 'login', { text: 'LOG IN TO BATTLE', size: 14, ax: 0.5, x: [0.5, 0], y: 330, w: 240, h: 48, hidden: true }, 'primary');
+
+  // incoming challenge: slides in at the top, doesn't block the screen
+  const ch = frame(overlay, 'challenge', { ax: 0.5, x: [0.5, 0], y: 20, w: 440, h: 122, bg: T.bg1, r: 16, stroke: T.pink, strokeT: 0.4, hidden: true, z: 50, cls: 'panel' });
+  label(ch, 'title', { text: 'CHALLENGE!', font: 'black', size: 11, color: T.pink, x: 18, y: 14, w: 200, h: 14 });
+  label(ch, 'timer', { text: '', font: 'bold', size: 11, color: T.dim, align: 'right', ax: 1, x: [1, -18], y: 14, w: 80, h: 14 });
+  label(ch, 'text', { html: '', font: 'med', size: 14, wrap: true, valign: 'top', x: 18, y: 34, w: 404, h: 36 });
+  button(ch, 'accept', { text: 'ACCEPT', size: 13, x: 18, y: 74, w: 196, h: 36, r: 10 }, 'primary');
+  button(ch, 'decline', { text: 'DECLINE', size: 13, x: 226, y: 74, w: 196, h: 36, r: 10 });
 
   // account (login / sign up / manage)
   buildAccountPanels(overlay, app);

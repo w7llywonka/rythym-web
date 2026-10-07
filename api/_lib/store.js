@@ -1,5 +1,12 @@
-// Key-value store for accounts. Production uses Upstash Redis over its REST API (works from Vercel
-// functions with no extra packages). Local dev and tests use an in-memory store.
+// Key-value store for accounts and 1v1. Three backends with the same small interface:
+// - redisStore: any Redis server (Railway Redis) over TCP
+// - upstashStore: Upstash Redis over its REST API (works from Vercel functions)
+// - memoryStore: local dev and tests
+//
+// Interface: get, mget, set(ex/nx), del, incr(window), sadd/srem/smembers,
+// zadd/zrangebyscore/zremrangebyscore/zrem (sorted sets), rpush(ttl)/drain (lists).
+
+const score = v => (v === '+inf' ? Infinity : v === '-inf' ? -Infinity : Number(v));
 
 export function memoryStore() {
   const data = new Map(); // key -> { v, exp }
@@ -31,6 +38,35 @@ export function memoryStore() {
     },
     async srem(key, member) { live(key)?.v.delete(member); },
     async smembers(key) { const e = live(key); return e ? [...e.v] : []; },
+    async mget(...keys) { return keys.map(k => { const e = live(k); return e && typeof e.v === 'string' ? e.v : null; }); },
+    async zadd(key, score, member) {
+      const e = live(key) ?? { v: new Map(), exp: 0 };
+      e.v.set(member, score);
+      data.set(key, e);
+    },
+    async zrangebyscore(key, min, max) {
+      const e = live(key);
+      if (!e) return [];
+      const lo = score(min), hi = score(max);
+      return [...e.v].filter(([, sc]) => sc >= lo && sc <= hi).sort((a, b) => a[1] - b[1]).map(([m]) => m);
+    },
+    async zremrangebyscore(key, min, max) {
+      const e = live(key);
+      const lo = score(min), hi = score(max);
+      if (e) for (const [m, sc] of e.v) if (sc >= lo && sc <= hi) e.v.delete(m);
+    },
+    async zrem(key, member) { live(key)?.v.delete(member); },
+    async rpush(key, value, ttl) {
+      const e = live(key) ?? { v: [], exp: 0 };
+      e.v.push(String(value));
+      e.exp = Date.now() + ttl * 1000;
+      data.set(key, e);
+    },
+    async drain(key) {
+      const e = live(key);
+      data.delete(key);
+      return e ? e.v : [];
+    },
   };
 }
 
@@ -72,6 +108,16 @@ export function upstashStore(url, token) {
     async sadd(key, member) { await cmd('SADD', key, member); },
     async srem(key, member) { await cmd('SREM', key, member); },
     async smembers(key) { return (await cmd('SMEMBERS', key)) ?? []; },
+    async mget(...keys) { return keys.length ? cmd('MGET', ...keys) : []; },
+    async zadd(key, score, member) { await cmd('ZADD', key, String(score), member); },
+    async zrangebyscore(key, min, max) { return (await cmd('ZRANGEBYSCORE', key, String(min), String(max))) ?? []; },
+    async zremrangebyscore(key, min, max) { await cmd('ZREMRANGEBYSCORE', key, String(min), String(max)); },
+    async zrem(key, member) { await cmd('ZREM', key, member); },
+    async rpush(key, value, ttl) { await pipeline(['RPUSH', key, String(value)], ['EXPIRE', key, String(ttl)]); },
+    async drain(key) {
+      const json = await send('/multi-exec', [['LRANGE', key, '0', '-1'], ['DEL', key]]);
+      return json[0]?.result ?? [];
+    },
   };
 }
 
@@ -107,6 +153,16 @@ export function redisStore(url) {
     async sadd(key, member) { await (await client()).sAdd(key, member); },
     async srem(key, member) { await (await client()).sRem(key, member); },
     async smembers(key) { return (await client()).sMembers(key); },
+    async mget(...keys) { return keys.length ? (await client()).mGet(keys) : []; },
+    async zadd(key, score, member) { await (await client()).zAdd(key, { score, value: member }); },
+    async zrangebyscore(key, min, max) { return (await client()).zRangeByScore(key, min, max); },
+    async zremrangebyscore(key, min, max) { await (await client()).zRemRangeByScore(key, min, max); },
+    async zrem(key, member) { await (await client()).zRem(key, member); },
+    async rpush(key, value, ttl) { await (await client()).multi().rPush(key, String(value)).expire(key, ttl).exec(); },
+    async drain(key) {
+      const [items] = await (await client()).multi().lRange(key, 0, -1).del(key).exec();
+      return items ?? [];
+    },
   };
 }
 

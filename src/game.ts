@@ -8,7 +8,8 @@ import { comboMultiplier, fmtTime, formatNumber, keyName, setMultiplier, setSumm
 import type { Diff, Lane, PlaySet, Settings, Track } from './types.ts';
 import { $, rgba, show, txt } from './ui.ts';
 
-export interface RunOpts { set?: PlaySet; weekly?: number; practice?: { from: number; to: number | null } }
+/** versus: a 1v1 run. leadIn() = seconds until the shared server start moment. */
+export interface RunOpts { set?: PlaySet; weekly?: number; practice?: { from: number; to: number | null }; versus?: { matchId: string; opponent: string; leadIn: () => number } }
 
 interface RunNote {
   time: number; lane: Lane; chord: boolean; endTime?: number; mine?: boolean;
@@ -557,7 +558,7 @@ export class Game {
       track, chartDiff: diff, opts, set, mode, style, chartEnd,
       startAt: style.practice ? Math.max(0, from - 0.5) : chartStart,
       practice: !!style.practice, weekly: opts?.weekly,
-      summary: (opts?.weekly !== undefined ? 'WEEKLY  ·  ' : '') + setSummary(set),
+      summary: (opts?.versus ? '1V1  ·  ' : opts?.weekly !== undefined ? 'WEEKLY  ·  ' : '') + setSummary(set),
       mult, unranked, auto: set.auto, rate, beatLen: 60 / track.bpm, windows,
       damage: mode.missDamage * (style.damageScale ?? 1), ghostPenalty: ghost,
       notes, objects, fallSong: (mode.fall / settings.scrollSpeed) * rate, offset: (settings.offset / 1000) * rate,
@@ -582,7 +583,7 @@ export class Game {
         if (lane === 1) this.applyLook();
       }
       show($('game.pf.flashlight'), set.flashlight);
-      show($('game.left.versus'), false);
+      show($('game.left.versus'), !!opts?.versus);
       this.applyHudLayout();
       this.setCombo(0);
       txt(this.judgeEl, '');
@@ -611,8 +612,8 @@ export class Game {
       if (this.run !== r) return;
     }
     r.buffer = buffer;
-    // a quick restart skips most of the countdown
-    const lead = quick ? 1.5 : K.LEAD_IN;
+    // a quick restart skips most of the countdown; a 1v1 starts on the shared server moment
+    const lead = opts?.versus ? Math.max(0.5, opts.versus.leadIn()) : quick ? 1.5 : K.LEAD_IN;
     r.anchorPos = r.startAt;
     r.anchorCtx = this.audio.now + lead;
     this.audio.start(buffer, r.anchorCtx, r.startAt, rate, 1);
@@ -622,7 +623,7 @@ export class Game {
 
   pause(): boolean {
     const r = this.run;
-    if (!r || !r.ready || r.ended) return false;
+    if (!r || !r.ready || r.ended || r.opts?.versus) return false; // no pausing in a 1v1
     if (r.paused && r.resumeAt === undefined) return false;
     if (!r.paused) {
       r.pausedAt = this.songTime(r);
