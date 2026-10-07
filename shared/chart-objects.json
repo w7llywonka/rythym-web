@@ -93,6 +93,7 @@
     "title": "Strap Yourselves In",
     "difficulty": "Expert",
     "duration": 166.8,
+    "weeklyFrom": 2962,
     "charts": {
       "Expert": 888,
       "Extreme": 1121
@@ -102,6 +103,7 @@
     "title": "Null Function",
     "difficulty": "Expert",
     "duration": 159.9,
+    "weeklyFrom": 2962,
     "charts": {
       "Expert": 749,
       "Extreme": 945
@@ -111,6 +113,7 @@
     "title": "Cyborg Ninja",
     "difficulty": "Expert",
     "duration": 180.1,
+    "weeklyFrom": 2962,
     "charts": {
       "Expert": 972,
       "Extreme": 1254
@@ -120,6 +123,7 @@
     "title": "Another Step Back",
     "difficulty": "Expert",
     "duration": 183.5,
+    "weeklyFrom": 2962,
     "charts": {
       "Expert": 993,
       "Extreme": 1308
@@ -129,6 +133,7 @@
     "title": "Final Hour",
     "difficulty": "Extreme",
     "duration": 62.1,
+    "weeklyFrom": 2962,
     "charts": {
       "Extreme": 446,
       "Insane": 486
@@ -138,6 +143,7 @@
     "title": "Shortcuts",
     "difficulty": "Extreme",
     "duration": 62.3,
+    "weeklyFrom": 2962,
     "charts": {
       "Extreme": 408,
       "Insane": 486
@@ -147,6 +153,7 @@
     "title": "Ripped Apart",
     "difficulty": "Extreme",
     "duration": 62.2,
+    "weeklyFrom": 2962,
     "charts": {
       "Extreme": 415,
       "Insane": 566
@@ -156,6 +163,7 @@
     "title": "Psychic",
     "difficulty": "Extreme",
     "duration": 62.5,
+    "weeklyFrom": 2962,
     "charts": {
       "Extreme": 405,
       "Insane": 560
@@ -165,6 +173,7 @@
     "title": "Hard Boss Battle 1",
     "difficulty": "Extreme",
     "duration": 63.2,
+    "weeklyFrom": 2962,
     "charts": {
       "Extreme": 423,
       "Insane": 561

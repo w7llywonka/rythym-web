@@ -39,6 +39,8 @@ export interface Song {
   credit?: Credit;
   /** licensed Extreme tracks are charted on their busiest stretch (seconds) */
   window?: { start: number; end: number };
+  /** first weekly-challenge week the song can be picked, so adding songs never changes a week in progress */
+  weeklyFrom?: number;
 }
 
 export interface ChartNote { time: number; lane: Lane; chord: boolean; strength?: number; endTime?: number }
@@ -53,7 +55,7 @@ export interface Track {
   bpm: number; displayBpm: number; offset: number; length: number; displayLength: number; previewStart: number;
   color1: string; color2: string; low: string; mid: string; high: string;
   grid?: number[]; downbeat?: number; sustain?: string; energy?: string;
-  chartStart?: number; chartEnd?: number; custom?: boolean;
+  chartStart?: number; chartEnd?: number; custom?: boolean; weeklyFrom?: number;
   song: Song; charts: Partial<Record<Diff, Chart>>; chartList: Diff[]; level: number;
 }
 

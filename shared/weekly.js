@@ -24,14 +24,17 @@ export function currentWeek(now = Date.now() / 1000) {
 }
 
 /**
- * This week's song (from the Hard / Expert soundtrack, by id order) and modifiers.
- * @template {{ id: string, difficulty: string }} S
+ * This week's song (from the Hard / Expert soundtrack, by id order) and modifiers. A song with a
+ * `weeklyFrom` week only joins the pool from that week on, so adding songs never changes a week in progress.
+ * @template {{ id: string, difficulty: string, weeklyFrom?: number }} S
  * @param {number} week
  * @param {S[]} songs
  * @returns {{ song: S, mods: WeeklyModsJs } | null}
  */
 export function pickWeekly(week, songs) {
-  const pool = songs.filter(s => s.difficulty === 'Hard' || s.difficulty === 'Expert').sort((a, b) => (a.id < b.id ? -1 : 1));
+  const pool = songs
+    .filter(s => (s.difficulty === 'Hard' || s.difficulty === 'Expert') && (s.weeklyFrom ?? -Infinity) <= week)
+    .sort((a, b) => (a.id < b.id ? -1 : 1));
   if (!pool.length) return null;
   const mod = (n, m) => ((n % m) + m) % m;
   return { song: pool[mod(week * 7, pool.length)], mods: WEEKLY_MODS[mod(week, WEEKLY_MODS.length)] };

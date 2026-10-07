@@ -4,12 +4,12 @@
 import { writeFileSync } from 'node:fs';
 import { soundtrack } from '../src/tracks.ts';
 
-type Entry = { title: string; difficulty: string; duration: number; charts: Record<string, number> };
+type Entry = { title: string; difficulty: string; duration: number; weeklyFrom?: number; charts: Record<string, number> };
 
 export function chartObjects(): Record<string, Entry> {
   const out: Record<string, Entry> = {};
   for (const t of soundtrack()) {
-    out[t.id] = { title: t.title, difficulty: t.difficulty, duration: Math.round(t.length * 10) / 10, charts: {} };
+    out[t.id] = { title: t.title, difficulty: t.difficulty, duration: Math.round(t.length * 10) / 10, ...(t.weeklyFrom !== undefined ? { weeklyFrom: t.weeklyFrom } : {}), charts: {} };
     for (const diff of t.chartList) if (t.charts[diff]) out[t.id].charts[diff] = t.charts[diff]!.objects;
   }
   return out;

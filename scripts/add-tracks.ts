@@ -24,6 +24,8 @@ interface Entry {
   original: string;
   /** chart only the busiest stretch of about this many seconds (Extreme tracks) */
   windowSeconds?: number;
+  /** first weekly-challenge week it can be picked (set when the song is added) */
+  weeklyFrom?: number;
 }
 
 const KBPS = 160;
@@ -137,7 +139,7 @@ for (const e of manifest) {
     id: e.id, title: e.title, artist: e.artist, genre: e.genre, bpm: analysis.bpm, duration: Math.round(duration * 1000) / 1000,
     level: 0, difficulty: e.tier, color: e.color, color2: e.color2, audio: `file:/music/${file}?v=${version}`,
     previewStart: Math.round((window ? window.start + Math.min(20, (window.end - window.start) * 0.3) : duration * 0.3) * 100) / 100,
-    seed, analysis, credit, ...(window ? { window } : {}),
+    seed, analysis, credit, ...(window ? { window } : {}), ...(e.weeklyFrom !== undefined ? { weeklyFrom: e.weeklyFrom } : {}),
   };
   out.push({ song });
   console.log(`${e.id.padEnd(20)} ${e.tier.padEnd(8)} ${analysis.bpm.toFixed(1).padStart(6)} BPM  fit ${analysis.gridFit.toFixed(2)}  ${fmt(duration)}` +

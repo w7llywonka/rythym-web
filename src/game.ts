@@ -436,7 +436,8 @@ export class Game {
     const r = this.run;
     if (!r || !r.ready || r.paused || r.ended || r.auto) return;
     const t = this.songTime(r) - ageSeconds * r.rate;
-    if (t < r.startAt) return;
+    // presses during the countdown are ignored, but not ones early for a line right after it
+    if (t < r.startAt + Math.min(0, r.offset) - r.windows[2] * r.rate) return;
     const list = r.active[lane];
     let target: RunNote | undefined, idx = -1, mine: RunNote | undefined;
     for (let i = 0; i < list.length; i++) {
@@ -557,7 +558,8 @@ export class Game {
 
     const r: Run = {
       track, chartDiff: diff, opts, set, mode, style, chartEnd,
-      startAt: style.practice ? Math.max(0, from - 0.5) : chartStart,
+      // an excerpt (chartStart > 0) starts a second before its first line, like the originals' lead-in
+      startAt: style.practice ? Math.max(0, from - 0.5) : chartStart > 0 ? Math.max(0, chartStart - 1) : 0,
       practice: !!style.practice, weekly: opts?.weekly,
       summary: (opts?.versus ? '1V1  ·  ' : opts?.weekly !== undefined ? 'WEEKLY  ·  ' : '') + setSummary(set),
       mult, unranked, auto: set.auto, rate, beatLen: 60 / track.bpm, windows,
@@ -620,7 +622,9 @@ export class Game {
     const lead = opts?.versus ? Math.max(0.5, opts.versus.leadIn()) : quick ? 1.5 : K.LEAD_IN;
     r.anchorPos = r.startAt;
     r.anchorCtx = this.audio.now + lead;
-    this.audio.start(buffer, r.anchorCtx, r.startAt, rate, 1);
+    // the countdown plays over the music before the start, when there is any (excerpts, practice)
+    const pre = Math.min(r.startAt, lead * rate);
+    this.audio.start(buffer, r.anchorCtx - pre / rate, r.startAt - pre, rate, 1, undefined, pre > 0 ? Math.min(0.3, pre / rate) : 0);
     r.musicStarted = true;
     r.ready = true;
   }

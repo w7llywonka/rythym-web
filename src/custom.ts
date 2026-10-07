@@ -71,7 +71,7 @@ function resample(samples: Float32Array, rate: number): Float32Array {
  *    (lightly compensated for quiet sections). Held sounds (808s, vocals, leads) give each step
  *    a sustain length, and every step gets the section's energy.
  */
-export async function analyzeSamples(input: Float32Array, inputRate: number, onProgress: Progress = () => {}): Promise<SampleAnalysis> {
+export async function analyzeSamples(input: Float32Array, inputRate: number, onProgress: Progress = () => {}, opts: { bpm?: number } = {}): Promise<SampleAnalysis> {
   if (!Number.isFinite(inputRate) || inputRate < 8000 || input.length < FFT_SIZE) {
     throw new Error('This audio does not contain enough usable samples.');
   }
@@ -148,12 +148,31 @@ export async function analyzeSamples(input: Float32Array, inputRate: number, onP
   // This settles half / double time and doesn't get fooled by triplet hi-hats.
   const odfPeaks = pickPeaks(odf);
   let best = { score: -Infinity, bpm: 0, beats: [] as number[] };
-  for (const candidate of tempoCandidates(odf)) {
+  for (const candidate of opts.bpm ? [] : tempoCandidates(odf)) {
     const beatsTried = trackBeats(odf, 60 / candidate / DT);
     const fit = sixteenthFit(odfPeaks, beatsTried);
     const score = fit ** 4 * tempoPrior(candidate);
     if (score > best.score) best = { score, bpm: candidate, beats: beatsTried };
     await yieldToBrowser();
+  }
+  // half-time check: fast breakbeat / DnB / hardcore often fits the half tempo just as well (its 16th
+  // grid is the real 8ths). Read at half speed it has a telltale shape: the off-beats hit almost as
+  // hard as the beats, the 16ths in between are busy, kicks land on those 16ths and snares on the
+  // off-beats (the real backbeat). Slow grooves (hip-hop, funk, R&B, reggaeton) keep their kicks on
+  // the beats and 8ths, so they stay slow. Ambiguous songs can be fixed by hand (`opts.bpm`).
+  if (opts.bpm) {
+    best = { score: 0, bpm: opts.bpm, beats: trackBeats(odf, 60 / opts.bpm / DT) };
+  } else if (best.bpm * 2 <= 210) {
+    const band = (bands: number[]) => {
+      const x = new Float32Array(frameCount);
+      for (const b of bands) for (let i = 0; i < frameCount; i++) x[i] += flux[b][i];
+      return x;
+    };
+    const all = subdivisionStrength(odf, best.beats);
+    const kick = subdivisionStrength(band([0]), best.beats), snare = subdivisionStrength(band([1, 2]), best.beats);
+    if (all.half >= 0.6 && all.quarter >= 0.5 && kick.quarter >= 0.6 && snare.half >= 0.6) {
+      best = { score: best.score, bpm: best.bpm * 2, beats: trackBeats(odf, 60 / (best.bpm * 2) / DT) };
+    }
   }
 
   // ---- 3. beats -> 16th-note grid ---------------------------------------------------------
@@ -383,6 +402,24 @@ function sixteenthFit(peaks: { frame: number; offset: number; strength: number }
   return total > 0 ? on / total : 0;
 }
 
+/** how hard the off-beats (half) and the 16ths in between (quarter) hit in an onset signal, relative to the beats */
+function subdivisionStrength(x: Float32Array, beats: number[]) {
+  const at = (frame: number) => {
+    const f = Math.round(frame);
+    let m = 0;
+    for (let k = Math.max(0, f - 2); k <= Math.min(x.length - 1, f + 2); k++) m = Math.max(m, x[k]);
+    return m;
+  };
+  let onBeat = 0, half = 0, quarter = 0;
+  for (let i = 0; i + 1 < beats.length; i++) {
+    const a = beats[i], span = beats[i + 1] - a;
+    onBeat += at(a);
+    half += at(a + span / 2);
+    quarter += (at(a + span / 4) + at(a + span * 3 / 4)) / 2;
+  }
+  return onBeat > 0 ? { half: half / onBeat, quarter: quarter / onBeat } : { half: 0, quarter: 0 };
+}
+
 /** dynamic-programming beat tracker (Ellis 2007, as in librosa): follows tempo drift */
 function trackBeats(odf: Float32Array, period: number): number[] {
   const n = odf.length;
@@ -462,16 +499,7 @@ export async function importSong(file: File, ctx: AudioContext, onProgress: Prog
     throw new Error('Choose a recording between 10 seconds and 15 minutes long.');
   }
   // Analyze a low-rate mono copy; retain the original buffer for playback.
-  const length = Math.floor(buffer.duration * ANALYSIS_RATE);
-  const mono = new Float32Array(length);
-  const ratio = buffer.sampleRate / ANALYSIS_RATE;
-  const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) => buffer.getChannelData(channel));
-  for (let i = 0; i < length; i++) {
-    const position = i * ratio, left = Math.floor(position), fraction = position - left;
-    for (const channel of channels) mono[i] += (channel[left] * (1 - fraction) + (channel[Math.min(left + 1, channel.length - 1)] ?? 0) * fraction) / channels.length;
-    if (i % (ANALYSIS_RATE * 8) === 0) await yieldToBrowser();
-  }
-  const result = await analyzeSamples(mono, ANALYSIS_RATE, onProgress);
+  const result = await analyzeSamples(await monoForAnalysis(buffer), ANALYSIS_RATE, onProgress);
   const title = file.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim().slice(0, 100) || 'Custom challenge';
   const seed = new DataView(digest.buffer).getUint32(0, false) || 1;
   const song: Song = {
@@ -483,4 +511,24 @@ export async function importSong(file: File, ctx: AudioContext, onProgress: Prog
     seed, analysis: result.analysis,
   };
   return { song, buffer, ...result };
+}
+
+/** chart an import again at a tempo the player picked (half or double of what was detected) */
+export async function retimeImport(song: Song, buffer: AudioBuffer, bpm: number, onProgress: Progress = () => {}): Promise<Song> {
+  const { analysis } = await analyzeSamples(await monoForAnalysis(buffer), ANALYSIS_RATE, onProgress, { bpm });
+  return { ...song, bpm: analysis.bpm, analysis };
+}
+
+/** a mono copy at the analysis rate */
+async function monoForAnalysis(buffer: AudioBuffer) {
+  const length = Math.floor(buffer.duration * ANALYSIS_RATE);
+  const mono = new Float32Array(length);
+  const ratio = buffer.sampleRate / ANALYSIS_RATE;
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) => buffer.getChannelData(channel));
+  for (let i = 0; i < length; i++) {
+    const position = i * ratio, left = Math.floor(position), fraction = position - left;
+    for (const channel of channels) mono[i] += (channel[left] * (1 - fraction) + (channel[Math.min(left + 1, channel.length - 1)] ?? 0) * fraction) / channels.length;
+    if (i % (ANALYSIS_RATE * 8) === 0) await yieldToBrowser();
+  }
+  return mono;
 }

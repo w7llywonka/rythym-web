@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { analyzeSamples, importSong } from '../src/custom.ts';
 import { trackFromImport } from '../src/tracks.ts';
 import { songs } from '../src/songs.ts';
@@ -85,7 +86,7 @@ test('imports are tiered by tempo and charted over the whole song', () => {
 
 // ---- beat-tracked import analysis --------------------------------------------------------------
 const RATE = 22050;
-function drums(opts: { bpm0: number; bpm1?: number; duration: number; pattern: 'four' | 'hiphop' | 'dnb'; pad?: boolean }) {
+function drums(opts: { bpm0: number; bpm1?: number; duration: number; pattern: 'four' | 'hiphop' | 'dnb' | 'break' | 'dembow' | 'funk'; pad?: boolean; hats?: number }) {
   let seed = 7;
   const rand = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296) * 2 - 1;
   const { bpm0, bpm1 = bpm0, duration, pattern } = opts;
@@ -97,14 +98,23 @@ function drums(opts: { bpm0: number; bpm1?: number; duration: number; pattern: '
     const beat = 60 / (bpm0 + (bpm1 - bpm0) * (t / duration));
     for (let q = 0; q < 4; q++) {
       const at = t + q * beat / 4, s = 4 * i + q, start = Math.round(at * RATE);
-      const kick = pattern === 'four' ? q === 0 : (s % 16 === 0 || s % 16 === 10);
-      const snare = pattern === 'four' ? (q === 0 && i % 2 === 1) : (s % 16 === 4 || s % 16 === 12);
+      const p = s % 16;
+      const kick = pattern === 'four' ? q === 0 : pattern === 'dembow' ? q === 0 : pattern === 'funk' ? [0, 3, 10].includes(p) : (p === 0 || p === 10);
+      const snare = pattern === 'four' ? (q === 0 && i % 2 === 1) : pattern === 'dembow' ? [3, 6, 11, 14].includes(p) : (p === 4 || p === 12);
       for (let k = 0; k < RATE * 0.25 && start + k < out.length; k++) {
         const x = k / RATE;
         let v = 0;
         if (kick) v += Math.sin(2 * Math.PI * (50 * x + 3 * (1 - Math.exp(-x / 0.03)))) * Math.exp(-x / 0.08) * 0.7;
         if (snare && x < 0.2) v += rand() * 0.5 * Math.exp(-x / 0.05) + Math.sin(2 * Math.PI * 190 * x) * Math.exp(-x / 0.04) * 0.3;
-        if (x < 0.04) v += rand() * Math.exp(-x / 0.008) * 0.12;
+        if (pattern !== 'break') {
+          if (x < 0.04) v += rand() * Math.exp(-x / 0.008) * (opts.hats ?? 0.12);
+          if (pattern === 'funk' && [7, 9, 15].includes(p) && x < 0.1) v += rand() * 0.15 * Math.exp(-x / 0.03); // ghost snares
+        } else {
+          // jungle-style break: heavy backbeat, ghost snares, open hats, and nothing on the 16ths
+          if (snare && x < 0.2) v += rand() * 0.4 * Math.exp(-x / 0.06);
+          if ((s % 16 === 6 || s % 16 === 14) && x < 0.1) v += rand() * 0.2 * Math.exp(-x / 0.03);
+          if (q % 2 === 0 && x < 0.12) v += rand() * (x < 0.04 ? 0.12 * Math.exp(-x / 0.008) : 0) + rand() * 0.15 * Math.exp(-x / 0.04);
+        }
         out[start + k] += v;
       }
     }
@@ -134,6 +144,28 @@ test('tempo is read the way people count it: 90 stays 90, DnB is 174', async () 
   assert.ok(Math.abs(hiphop.bpm - 90) < 2, `hip-hop read as ${hiphop.bpm}`);
   const dnb = (await analyzeSamples(drums({ bpm0: 174, duration: 30, pattern: 'dnb' }).out, RATE)).analysis;
   assert.ok(Math.abs(dnb.bpm - 174) < 2, `DnB read as ${dnb.bpm}`);
+});
+
+test('fast breakbeats are not read at half speed, slow grooves stay slow', async () => {
+  // real recordings that fit their half tempo just as well (both CC0, shipped in public/music)
+  const decode = (await import('audio-decode')).default;
+  for (const [file, bpm] of [['final-hour.mp3', 170], ['hard-boss-battle.mp3', 200]] as const) {
+    const audio = await decode(readFileSync(new URL(`../public/music/${file}`, import.meta.url)));
+    const a = (await analyzeSamples(audio.getChannelData(0), audio.sampleRate)).analysis;
+    assert.ok(Math.abs(a.bpm - bpm) / bpm < 0.03, `${file} read as ${a.bpm}, not ${bpm}`);
+  }
+  // slow grooves with strong off-beats and busy 16ths are still slow
+  for (const [pattern, hats] of [['dembow', 0.12], ['funk', 0.2], ['break', 0.12], ['hiphop', 0.12]] as const) {
+    const a = (await analyzeSamples(drums({ bpm0: 95, duration: 30, pattern, hats }).out, RATE)).analysis;
+    assert.ok(Math.abs(a.bpm - 95) < 2, `95 BPM ${pattern} read as ${a.bpm}`);
+  }
+});
+
+test('the tempo can be set by hand when a song is ambiguous', async () => {
+  const { out } = drums({ bpm0: 90, duration: 30, pattern: 'hiphop' });
+  const doubled = (await analyzeSamples(out, RATE, undefined, { bpm: 180 })).analysis;
+  assert.ok(Math.abs(doubled.bpm - 180) < 2, `read as ${doubled.bpm}`);
+  assert.ok(Math.abs(doubled.grid![8] - doubled.grid![0] - 60 / 180 * 2) < 0.01, '16th grid at the new tempo');
 });
 
 test('held sounds are measured, short hits are not', async () => {

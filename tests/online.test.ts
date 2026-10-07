@@ -81,6 +81,17 @@ test('scores are validated', async () => {
   assert.equal((await guest('POST', 'scores/submit', { songId: 'current', diff: 'Hard', score: 10 })).status, 401);
 });
 
+test('adding songs never changes the weekly challenge of a week in progress', () => {
+  const originals = soundtrack().filter(t => !t.song.credit);
+  // the week the licensed songs were added keeps its song; from the next week they're in the pool
+  assert.equal(pickWeekly(2961, soundtrack())!.song.id, pickWeekly(2961, originals)!.song.id);
+  const later = Array.from({ length: 40 }, (_, i) => pickWeekly(2962 + i, soundtrack())!.song);
+  assert.ok(later.some(s => s.song.credit), 'licensed Expert songs show up in later weeks');
+  // the server's catalog knows the same weeks
+  const objects = JSON.parse(readFileSync(new URL('../shared/chart-objects.json', import.meta.url), 'utf8'));
+  for (const t of soundtrack()) assert.equal(objects[t.id].weeklyFrom, t.weeklyFrom);
+});
+
 test('the live feed and King of the Hill', async () => {
   const { player, guest, tick, now } = setup();
   const a = await player('ann_lb'), b = await player('ben_lb');

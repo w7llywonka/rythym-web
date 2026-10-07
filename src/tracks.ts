@@ -30,6 +30,7 @@ export function trackFromSong(song: Song, overrides: Partial<Track> = {}): Track
     length: song.duration, displayLength: song.duration, previewStart: song.previewStart,
     color1: song.color, color2: song.color2, low: a.low, mid: a.mid, high: a.high,
     grid: a.grid, downbeat: a.downbeat, sustain: a.sustain, energy: a.energy,
+    ...(song.weeklyFrom !== undefined ? { weeklyFrom: song.weeklyFrom } : {}),
     song, charts: {}, chartList: [], level: 1, ...overrides,
   };
   buildCharts(track);

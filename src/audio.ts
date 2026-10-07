@@ -82,8 +82,8 @@ export class AudioEngine {
   hasBuffer(id: string) { return this.buffers.has(id); }
   registerBuffer(id: string, buffer: AudioBuffer) { this.buffers.set(id, Promise.resolve(buffer)); }
 
-  /** Starts `buffer` so that track position `offset` plays at ctx time `when`. */
-  start(buffer: AudioBuffer, when: number, offset: number, rate = 1, gain = 1, loop?: { start: number; end: number }) {
+  /** Starts `buffer` so that track position `offset` plays at ctx time `when` (fading in over `fadeIn` s). */
+  start(buffer: AudioBuffer, when: number, offset: number, rate = 1, gain = 1, loop?: { start: number; end: number }, fadeIn = 0) {
     const ctx = this.ctx!;
     this.stop();
     const src = ctx.createBufferSource();
@@ -106,6 +106,10 @@ export class AudioEngine {
     // if we're already past `when`, skip ahead in the track instead of starting late
     const skip = Math.max(0, ctx.currentTime - when) * rate;
     src.start(startAt, Math.max(0, Math.min(buffer.duration - 0.01, offset + skip)));
+    if (fadeIn > 0) {
+      g.gain.setValueAtTime(0, startAt);
+      g.gain.linearRampToValueAtTime(gain, startAt + fadeIn);
+    }
     this.source = src;
     this.gainNode = g;
     this.playStart = when;
