@@ -185,8 +185,8 @@ export class Game {
   private flashReceptor(lane: Lane, color: string) {
     const rec = $(`game.pf.lane${lane}.rec`);
     const base = LANE_COLORS[lane];
-    rec.style.boxShadow = `0 0 0 3px ${color}`;
-    tween(rec, 'stroke', 0, 1, 0.35, () => {}, ease.quad, 0, () => { rec.style.boxShadow = `0 0 0 3px ${base}`; });
+    rec.style.boxShadow = `0 0 0 1.5px ${color}`;
+    tween(rec, 'stroke', 0, 1, 0.35, () => {}, ease.quad, 0, () => { rec.style.boxShadow = `0 0 0 1.5px ${rgba(base, 0.45)}`; });
   }
 
   /** pixels per real second of timing error at the hit line */
@@ -217,11 +217,10 @@ export class Game {
     this.cue[lane] = q;
     const target = $(`game.pf.lane${lane}.rec.target`);
     const color = LANE_COLORS[lane];
-    target.style.height = `${4 + 4 * q}px`;
-    target.style.backgroundColor = q > 0 ? LIGHTEN(color, 0.25 + 0.5 * q) : rgba(color, 0.3);
-    target.style.boxShadow = q > 0 ? `0 0 ${6 + 16 * q}px ${rgba(color, 0.6 - 0.6 * q)}` : 'none';
-    const line = $(`game.pf.lane${lane}.zone.line`);
-    line.style.opacity = String(0.55 + 0.45 * q);
+    target.style.height = `${3 + 2 * q}px`;
+    target.style.backgroundColor = q > 0 ? LIGHTEN(color, 0.6 * q) : color;
+    target.style.boxShadow = `0 0 ${8 + 14 * q}px ${rgba(color, 0.4 - 0.5 * q)}`;
+    $(`game.pf.lane${lane}.rec`).style.backgroundColor = rgba(color, 0.94 - 0.08 * q);
   }
 
   /** a short mark where the line actually was when you hit it: above the button line = early, below = late */
@@ -564,7 +563,7 @@ export class Game {
       txt($('game.left.time'), `0:00 / ${fmtTime(chartEnd - r.startAt)}`);
       for (const lane of [1, 2] as Lane[]) {
         txt($(`game.pf.lane${lane}.rec.key`), keyName(settings.keys[lane - 1]));
-        $(`game.pf.lane${lane}.rec`).style.boxShadow = `0 0 0 3px ${LANE_COLORS[lane]}`;
+        $(`game.pf.lane${lane}.rec`).style.boxShadow = `0 0 0 1.5px ${rgba(LANE_COLORS[lane], 0.45)}`;
       }
       show($('game.pf.flashlight'), set.flashlight);
       show($('game.left.versus'), false);

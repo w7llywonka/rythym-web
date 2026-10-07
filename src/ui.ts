@@ -220,18 +220,19 @@ export function buildUI(app: HTMLElement) {
     frame(lane, 'beam', { cls: 'fill beam', grad: `linear-gradient(180deg, ${rgba(color, 1)} 0%, ${rgba(color, 0.85)} 55%, ${rgba(color, 0)} 100%)` }).style.opacity = '0';
     // lit while the key is held down
     frame(lane, 'held', { cls: 'fill beam heldbeam', grad: `linear-gradient(180deg, ${rgba(color, 1)} 0%, ${rgba(color, 0.9)} 60%, ${rgba(color, 0.6)} 100%)` });
-    const rec = node(lane, 'rec', { tag: 'button', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -14], w: 132, h: 104, bg: T.bg1, r: 16, stroke: color, strokeW: 2, cls: 'rec pop' });
-    frame(rec, 'glow', { cls: 'fill', bg: color, r: 16 }).style.opacity = '0';
-    frame(rec, 'heldglow', { cls: 'fill heldglow', bg: color, r: 16 });
-    frame(rec, 'target', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.5, 0], w: [1, -20], h: 4, bg: color, bgT: 0.3, r: 2 });
-    label(rec, 'key', { text: i === 1 ? 'F' : 'J', font: 'black', size: 26, align: 'center', ax: 0.5, x: [0.5, 0], y: 10, w: [1, -20], h: 32 });
-    label(rec, 'name', { text: `BUTTON ${i}`, size: 10, color: T.muted, align: 'center', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -10], w: [1, 0], h: 14 });
+    // the button: a tinted pad with one glowing hit line through its middle
+    const rec = node(lane, 'rec', { tag: 'button', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -14], w: 132, h: 104, bg: color, bgT: 0.94, r: 18, stroke: color, strokeW: 1.5, strokeT: 0.45, cls: 'rec pop' });
+    frame(rec, 'glow', { cls: 'fill', bg: color, r: 18 }).style.opacity = '0';
+    frame(rec, 'heldglow', { cls: 'fill heldglow', bg: color, r: 18 });
+    frame(rec, 'target', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.5, 0], w: [1, -28], h: 3, bg: color, r: 2, cls: 'target' });
+    label(rec, 'key', { text: i === 1 ? 'F' : 'J', font: 'black', size: 15, color: T.text, textT: 0.25, align: 'center', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -12], w: [1, -20], h: 20 });
+    label(rec, 'name', { text: `BUTTON ${i}`, size: 10, color: T.muted, align: 'center', ax: 0.5, x: [0.5, 0], y: 12, w: [1, 0], h: 14, hidden: true });
     // hit zone: where Good / Great / Perfect count (sized per run from the timing windows), drawn over the button
     const zone = frame(lane, 'zone', { cls: 'fill nopointer', z: 3 });
-    for (const [nm, c] of [['good', T.green], ['great', T.cyan], ['perfect', T.gold]] as const) {
-      frame(zone, nm, { ax: 0.5, ay: 0.5, x: [0.5, 0], y: 510, w: [1, -6], h: 0, bg: c, r: 6, cls: `zoneband ${nm}` });
+    for (const nm of ['good', 'great', 'perfect']) {
+      frame(zone, nm, { ax: 0.5, ay: 0.5, x: [0.5, 0], y: 510, w: 120, h: 0, bg: color, r: 10, cls: `zoneband ${nm}` });
     }
-    frame(zone, 'line', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: 510, w: [1, 0], h: 2, bg: '#FFFFFF', cls: 'hitline' });
+    frame(zone, 'line', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: 510, w: 104, h: 1, bg: '#FFFFFF', cls: 'hitline' });
     frame(lane, 'notes', { cls: 'fill nopointer', z: 4 });
   }
   frame(pf, 'flashlight', { cls: 'fill', hidden: true, grad: 'linear-gradient(180deg, #000 0%, #000 50%, rgba(0,0,0,0) 72%)', r: 20 });
