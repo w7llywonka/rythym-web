@@ -3,15 +3,15 @@
 import type { User } from '../api.ts';
 import { PACKS, type Pack, type Tab } from '../config.ts';
 import type { RunOpts } from '../game.ts';
-import { load as loadLocal } from '../storage.ts';
+import { load as loadLocal, withImportProgress } from '../storage.ts';
 import { soundtrack } from '../tracks.ts';
 import type { Diff, SaveData, Settings, Track } from '../types.ts';
 
 export type Screen = 'home' | 'select' | 'game' | 'results';
 
 export const S = {
-  /** settings, bests, recent songs and profile (the account's copy when logged in) */
-  data: loadLocal() as SaveData,
+  /** settings, bests, recent songs and profile (the account's copy when logged in), plus this computer's imports */
+  data: withImportProgress(loadLocal()) as SaveData,
   account: null as User | null,
   /** no account server here (static hosting / not configured): everyone plays as a guest */
   accountsOffline: false,

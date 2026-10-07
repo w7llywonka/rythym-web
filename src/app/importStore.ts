@@ -21,36 +21,47 @@ function db(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-function run<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T> | void): Promise<T | undefined> {
+function run<T>(stores: string[], mode: IDBTransactionMode, fn: (tx: IDBTransaction) => IDBRequest<T> | void): Promise<T | undefined> {
   return db().then(d => new Promise((resolve, reject) => {
-    const tx = d.transaction(store, mode);
-    const req = fn(tx.objectStore(store));
+    const tx = d.transaction(stores, mode);
+    const req = fn(tx);
     tx.oncomplete = () => resolve(req ? req.result : undefined);
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   }));
 }
 
+/** saves still being written, by id: removing an import waits for its save so the save can't land after it */
+const saving = new Map<string, Promise<unknown>>();
+
 /** keep an import (song + original file). Asks the browser not to evict our storage. */
 export async function saveImport(song: Song, file: Blob) {
-  await run(AUDIO, 'readwrite', s => s.put(file, song.id));
-  await run(SONGS, 'readwrite', s => s.put({ id: song.id, song, savedAt: Date.now() }));
+  // one transaction for both, so there's never a song without its audio (or the other way round)
+  const done = run([SONGS, AUDIO], 'readwrite', tx => {
+    tx.objectStore(AUDIO).put(file, song.id);
+    tx.objectStore(SONGS).put({ id: song.id, song, savedAt: Date.now() });
+  });
+  saving.set(song.id, done);
+  try { await done; } finally { if (saving.get(song.id) === done) saving.delete(song.id); }
   void navigator.storage?.persist?.().catch(() => {});
 }
 
 /** every saved import's song data, oldest first */
 export async function loadImports(): Promise<Song[]> {
-  const rows = (await run<{ id: string; song: Song; savedAt: number }[]>(SONGS, 'readonly', s => s.getAll())) ?? [];
+  const rows = (await run<{ id: string; song: Song; savedAt: number }[]>([SONGS], 'readonly', tx => tx.objectStore(SONGS).getAll())) ?? [];
   return rows.sort((a, b) => a.savedAt - b.savedAt).map(r => r.song);
 }
 
 /** the original audio file of an import */
 export async function loadImportAudio(id: string): Promise<ArrayBuffer | null> {
-  const blob = await run<Blob>(AUDIO, 'readonly', s => s.get(id));
+  const blob = await run<Blob>([AUDIO], 'readonly', tx => tx.objectStore(AUDIO).get(id));
   return blob ? blob.arrayBuffer() : null;
 }
 
 export async function removeImport(id: string) {
-  await run(SONGS, 'readwrite', s => s.delete(id));
-  await run(AUDIO, 'readwrite', s => s.delete(id));
+  await saving.get(id)?.catch(() => {});
+  await run([SONGS, AUDIO], 'readwrite', tx => {
+    tx.objectStore(SONGS).delete(id);
+    tx.objectStore(AUDIO).delete(id);
+  });
 }

@@ -3,6 +3,7 @@
 import { K, MODES, STAR_COLORS, T, TAB_INFO, TAB_ORDER, type Pack, type Tab } from '../config.ts';
 import { importSong } from '../custom.ts';
 import { currentSet, fmtTime, formatNumber, gradeColor, setMultiplier, setSummary } from '../scoring.ts';
+import { dropImportProgress } from '../storage.ts';
 import { trackFromImport } from '../tracks.ts';
 import type { Track } from '../types.ts';
 import { $, rgba, show, txt } from '../ui.ts';
@@ -234,6 +235,12 @@ async function importFile(file: File) {
     const t = trackFromImport(imported.song);
     if (!t.charts[t.difficulty]) throw new Error("Couldn't find enough beats to chart this track.");
     audio.registerBuffer(t.song.id, imported.buffer);
+    // the same file again but charted for another tier: its old bests were for a different chart
+    const old = S.tracksById.get(t.id);
+    if (old && old.difficulty !== t.difficulty) {
+      S.data = dropImportProgress(S.data, t.id);
+      queueSave();
+    }
     setTracks([...S.tracks.filter(x => x.id !== t.id), t]);
     S.selectedSong[t.difficulty] = t;
     setTab(t.difficulty);
@@ -265,13 +272,17 @@ async function removeSelectedImport() {
   if (!t?.custom || !window.confirm(`Remove "${t.title}" from this computer? Its scores are removed too.`)) return;
   try { await removeImport(t.id); } catch { /* already gone */ }
   setTracks(S.tracks.filter(x => x !== t));
-  for (const key of [t.id, `${t.id}+`]) delete S.data.bests[key];
-  S.data.recent = S.data.recent.filter(e => e.id !== t.id);
-  for (const tab of TAB_ORDER) if (S.selectedSong[tab] === t) S.selectedSong[tab] = undefined;
+  S.data = dropImportProgress(S.data, t.id);
+  for (const tab of TAB_ORDER) if (S.selectedSong[tab] === t) S.selectedSong[tab] = songsFor(tab)[0];
   queueSave();
   buildList();
-  const next = S.selectedSong[S.tab];
-  if (S.previewTrack === t && next) void playPreview(next);
+  if (S.previewTrack?.id === t.id) {
+    // its music is gone: stop it, then play this tab's next song (or Easy's if the tab is now empty, e.g. Recent)
+    audio.token++;
+    audio.stop();
+    S.previewTrack = null;
+    void playPreview(S.selectedSong[S.tab] ?? S.selectedSong.Easy);
+  }
   showToast(`${t.title} removed`);
 }
 

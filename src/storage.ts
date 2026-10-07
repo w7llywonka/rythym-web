@@ -1,6 +1,6 @@
 // Saves Line Rush settings, bests, recent songs and profile in this browser (localStorage).
 // Everything loaded is sanitized the same way the Roblox server does before trusting it.
-import { DEFAULT_SETTINGS, HIT_SOUNDS, MODES, RATES, STYLES } from './config.ts';
+import { DEFAULT_SETTINGS, HIT_SOUNDS, K, MODES, RATES, STYLES } from './config.ts';
 import { NOTE_SIZE, NOTE_STYLES } from './look.ts';
 import type { Bests, Diff, Profile, RecentEntry, SaveData, Settings } from './types.ts';
 
@@ -134,7 +134,8 @@ export function save(data: SaveData, storage: Pick<Storage, 'setItem'> | null = 
 
 // ---- imported songs stay on this computer ---------------------------------------------------
 // Bests and Recent entries for imported songs ("custom-...") are never sent to the account; they're
-// kept in their own localStorage entry and merged back in.
+// kept in their own localStorage entry and merged back in. Once that entry exists it's the only
+// source for imports: "custom-..." entries in the guest or account save are ignored.
 export const IMPORT_PROGRESS_KEY = 'lineRush.importProgress';
 export const isImportId = (id: string) => id.startsWith('custom-');
 
@@ -147,19 +148,35 @@ export function withoutImports(data: SaveData): SaveData {
   };
 }
 
+/** forget an imported song's bests (both charts) and its Recent entries */
+export function dropImportProgress(data: SaveData, id: string): SaveData {
+  const bests = { ...data.bests };
+  delete bests[id];
+  delete bests[`${id}+`];
+  return { ...data, bests, recent: data.recent.filter(e => e.id !== id) };
+}
+
 export function saveImportProgress(data: SaveData, storage: Pick<Storage, 'setItem'> | null = browserStorage()) {
   const bests = Object.fromEntries(Object.entries(data.bests).filter(([id]) => isImportId(id)));
-  const recent = data.recent.filter(e => isImportId(e.id));
+  // the whole Recent order (it never leaves this computer), so imports keep their place when merged back
+  const recent = data.recent.slice(0, K.MAX_RECENT);
   try { storage?.setItem(IMPORT_PROGRESS_KEY, JSON.stringify({ bests, recent })); } catch { /* storage full or blocked */ }
 }
 
-/** put this computer's imported-song progress back into a save (after loading it from the account) */
+/** put this computer's imported-song progress back into a save (the guest save or the account's) */
 export function withImportProgress(data: SaveData, storage: Pick<Storage, 'getItem'> | null = browserStorage()): SaveData {
   let raw: unknown = null;
   try { raw = JSON.parse(storage?.getItem(IMPORT_PROGRESS_KEY) ?? 'null'); } catch { /* broken entry */ }
-  const local = sanitize(raw && typeof raw === 'object' ? { bests: (raw as SaveData).bests, recent: (raw as SaveData).recent } : null);
-  const bests = { ...data.bests };
+  // never written: an older save, so its own import entries are kept this once
+  if (!isObj(raw)) return { ...data, recent: data.recent.slice(0, K.MAX_RECENT) };
+  const local = sanitize({ bests: raw.bests, recent: raw.recent });
+  const base = withoutImports(data);
+  const bests = { ...base.bests };
   for (const [id, b] of Object.entries(local.bests)) if (isImportId(id)) bests[id] = b;
-  const recent = [...data.recent, ...local.recent.filter(e => isImportId(e.id) && !data.recent.some(r => r.id === e.id))];
-  return { ...data, bests, recent };
+  // Recent in this computer's order (built-in songs only if the base still has them), then the base's others
+  const recent: RecentEntry[] = [];
+  const add = (e: RecentEntry | undefined) => { if (e && !recent.some(r => r.id === e.id)) recent.push(e); };
+  for (const e of local.recent) add(isImportId(e.id) ? e : base.recent.find(r => r.id === e.id));
+  for (const e of base.recent) add(e);
+  return { ...base, bests, recent: recent.slice(0, K.MAX_RECENT) };
 }
