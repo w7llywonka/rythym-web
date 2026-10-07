@@ -13,7 +13,8 @@ test('licensed tracks: allowed licenses only, files present, credited', () => {
     assert.doesNotMatch(s.credit!.license, /NC|ND|SA/);
     assert.match(s.credit!.sourceUrl, /^https:\/\//);
     assert.match(s.credit!.licenseUrl, /^https:\/\/creativecommons\.org\//);
-    const file = new URL(`../public${s.audio.replace(/^file:/, '')}`, import.meta.url);
+    assert.match(s.audio, /^file:\/music\/[a-z0-9-]+\.mp3\?v=[0-9a-f]{10}$/, `${s.id} audio URL is versioned`);
+    const file = new URL(`../public${s.audio.replace(/^file:/, '').split('?')[0]}`, import.meta.url);
     assert.ok(existsSync(file), `${s.id} audio file`);
     assert.ok(statSync(file).size > 100_000, `${s.id} audio is a real recording`);
     assert.ok(s.difficulty === 'Expert' || s.difficulty === 'Extreme', `${s.id} is Expert or Extreme`);

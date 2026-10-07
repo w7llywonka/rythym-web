@@ -24,10 +24,17 @@ function render() {
       const title = document.createElement('b');
       title.textContent = t.title;
       const by = document.createElement('span');
-      by.textContent = ` by ${t.artist}`;
+      by.append(' by ', c.artistUrl ? link(t.artist, c.artistUrl) : t.artist);
       const meta = document.createElement('div');
       meta.append(link(c.license, c.licenseUrl), document.createTextNode('  ·  '), link(c.source, c.sourceUrl));
       row.append(title, by, meta);
+      // the artist's own credit wording, and what was changed from their file
+      for (const note of [c.attribution, c.changes && `${c.changes}.`]) {
+        if (!note) continue;
+        const line = document.createElement('div');
+        line.textContent = note;
+        row.append(line);
+      }
       return row;
     });
   const original = document.createElement('div');

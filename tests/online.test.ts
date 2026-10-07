@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createAuth } from '../api/_lib/core.js';
 import { memoryStore } from '../api/_lib/store.js';
 import { currentWeek, pickWeekly } from '../shared/weekly.js';
-import { songs } from '../src/songs.ts';
+import { soundtrack } from '../src/tracks.ts';
 import { chartObjects } from '../scripts/chart-objects.ts';
 
 // Test-only accounts in an in-memory store.
@@ -85,7 +85,7 @@ test('the live feed and King of the Hill', async () => {
   const { player, guest, tick, now } = setup();
   const a = await player('ann_lb'), b = await player('ben_lb');
   const { week } = currentWeek(now() / 1000);
-  const pick = pickWeekly(week, songs)!;
+  const pick = pickWeekly(week, soundtrack())!; // the same catalog the server uses
   const weeklyRun = { songId: pick.song.id, diff: pick.song.difficulty, weekly: week, style: pick.mods.style, rate: pick.mods.rate, grade: 'A', fc: false };
 
   tick(20_000);

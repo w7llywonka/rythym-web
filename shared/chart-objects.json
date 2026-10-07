@@ -88,5 +88,86 @@
       "Hard": 206,
       "Expert": 246
     }
+  },
+  "strap-yourselves-in": {
+    "title": "Strap Yourselves In",
+    "difficulty": "Expert",
+    "duration": 166.8,
+    "charts": {
+      "Expert": 888,
+      "Extreme": 1121
+    }
+  },
+  "null-function": {
+    "title": "Null Function",
+    "difficulty": "Expert",
+    "duration": 159.9,
+    "charts": {
+      "Expert": 749,
+      "Extreme": 945
+    }
+  },
+  "cyborg-ninja": {
+    "title": "Cyborg Ninja",
+    "difficulty": "Expert",
+    "duration": 180.1,
+    "charts": {
+      "Expert": 972,
+      "Extreme": 1254
+    }
+  },
+  "another-step-back": {
+    "title": "Another Step Back",
+    "difficulty": "Expert",
+    "duration": 183.5,
+    "charts": {
+      "Expert": 993,
+      "Extreme": 1308
+    }
+  },
+  "final-hour": {
+    "title": "Final Hour",
+    "difficulty": "Extreme",
+    "duration": 62.1,
+    "charts": {
+      "Extreme": 446,
+      "Insane": 486
+    }
+  },
+  "shortcuts": {
+    "title": "Shortcuts",
+    "difficulty": "Extreme",
+    "duration": 62.3,
+    "charts": {
+      "Extreme": 408,
+      "Insane": 486
+    }
+  },
+  "ripped-apart": {
+    "title": "Ripped Apart",
+    "difficulty": "Extreme",
+    "duration": 62.2,
+    "charts": {
+      "Extreme": 415,
+      "Insane": 566
+    }
+  },
+  "psychic": {
+    "title": "Psychic",
+    "difficulty": "Extreme",
+    "duration": 62.5,
+    "charts": {
+      "Extreme": 405,
+      "Insane": 560
+    }
+  },
+  "hard-boss-battle": {
+    "title": "Hard Boss Battle 1",
+    "difficulty": "Extreme",
+    "duration": 63.2,
+    "charts": {
+      "Extreme": 423,
+      "Insane": 561
+    }
   }
 }

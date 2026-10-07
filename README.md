@@ -109,9 +109,15 @@ npm run build
 
 ## Songs
 
-There are ten original synthesized tracks (five Easy, five Hard), rendered locally with Web Audio. No samples or downloads are needed. The Roblox version's licensed songs can't be used outside Roblox. Use **+ IMPORT** in song select to play your own audio file. Everything happens in your browser (nothing is uploaded):
+- **Ten originals** (five Easy, five Hard): synthesized locally with Web Audio, CC0.
+- **Nine licensed tracks** (four Expert, five Extreme) by other artists, all CC0 or CC BY 4.0, each checked on its source page (no NonCommercial / NoDerivatives / ShareAlike licenses, remixes or re-uploads). They're credited in the game (CREDITS on the home screen, and the license on each song panel) and in [MUSIC-LICENSE.md](MUSIC-LICENSE.md). Expert songs play in full; Extreme songs are a one-minute excerpt of their busiest part, like the Roblox version. To add one: put it in `scripts/licensed-tracks.json`, run `npm run tracks -- --from <folder with the downloads>` (makes `public/music/<id>.mp3` and its analysis), then `npm run charts`.
+- The Roblox version's licensed songs can't be used outside Roblox.
 
-- **Beat tracking** (dynamic programming over the onset signal) follows the song's real beats, including tempo drift, instead of assuming one perfect tempo. Tempo is chosen from several candidates by how well each one's 16th grid explains the onsets, so half / double time and triplet hi-hats don't fool it.
+Use **+ IMPORT** in song select to play your own audio file. Everything happens in your browser, and nothing is uploaded: the song is kept on your computer (IndexedDB) so it's still there next time, and its scores stay on your computer too, never in your account. **REMOVE IMPORT** on its song panel deletes it.
+
+The import beatmapper:
+
+- **Beat tracking** (dynamic programming over the onset signal) follows the song's real beats, including tempo drift, instead of assuming one perfect tempo. Tempo is chosen from several candidates by how well each one's 16th grid explains the onsets, so half / double time and triplet hi-hats don't fool it. Fast breakbeat, DnB and hardcore that fit the half tempo just as well are caught too (strong off-beats and busy 16ths mean it's really double), so a 170 BPM jungle track isn't charted as an 85 BPM Easy song.
 - **Onsets** are picked per band (kick, body, presence, air) and each lands on exactly one 16th step. Only clear hits become lines.
 - **Holds** come from sounds that actually ring out (808s, sung or synth notes), followed by pitch so drums on top don't cut them off.
 - **Density follows the song's energy** (drops are busier than breakdowns), and **repeating bars get repeating patterns**, like a hand-made chart.
@@ -141,7 +147,8 @@ Timing runs on the Web Audio clock (`AudioContext.currentTime`) with latency com
 - `shared/`: used by both the game and the server (`weekly.js`, `chart-objects.json` from `npm run charts`)
 - `api/_lib/`: the server: `core.js` (accounts, sessions, security), `online.js` (boards, feed), `versus.js` (1v1), `catalog.js`, `store.js` (Redis / Upstash / memory)
 - `server.js`: Node server for Railway (static files with compression + the API); `api/index.js`: the same API as a Vercel function
-- `scripts/`: music generation, analysis and `chart-objects.ts`
+- `scripts/`: music generation, analysis, `add-tracks.ts` (licensed tracks) and `chart-objects.ts`
+- `src/app/importStore.ts`: imported songs kept on this computer (IndexedDB)
 - `tests/`
 
-Code is MIT licensed. The original music recipes and generated audio are dedicated to CC0.
+Code is MIT licensed. The original music recipes and generated audio are dedicated to CC0; the licensed tracks keep their own licenses (see MUSIC-LICENSE.md).

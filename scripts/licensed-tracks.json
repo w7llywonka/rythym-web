@@ -1,0 +1,162 @@
+[
+  {
+    "id": "strap-yourselves-in",
+    "original": "strap-yourselves-in.ogg",
+    "title": "Strap Yourselves In",
+    "artist": "congusbongus",
+    "genre": "FM Techno",
+    "tier": "Expert",
+    "color": "#3FD5FF",
+    "color2": "#5B5BFF",
+    "credit": {
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "source": "OpenGameArt",
+      "sourceUrl": "https://opengameart.org/content/strap-yourselves-in",
+      "changes": "Converted from OGG to MP3"
+    }
+  },
+  {
+    "id": "null-function",
+    "original": "null-function.ogg",
+    "title": "Null Function",
+    "artist": "congusbongus",
+    "genre": "Jungle",
+    "tier": "Expert",
+    "color": "#B4FF3C",
+    "color2": "#14B85A",
+    "credit": {
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "source": "OpenGameArt",
+      "sourceUrl": "https://opengameart.org/content/null-function",
+      "changes": "Converted from OGG to MP3"
+    }
+  },
+  {
+    "id": "cyborg-ninja",
+    "original": "cyborg-ninja.mp3",
+    "title": "Cyborg Ninja",
+    "artist": "Kevin MacLeod",
+    "genre": "Retro Action",
+    "tier": "Expert",
+    "color": "#FF4FD8",
+    "color2": "#7A2CFF",
+    "credit": {
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "source": "incompetech",
+      "sourceUrl": "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1600008",
+      "artistUrl": "https://incompetech.com",
+      "attribution": "\"Cyborg Ninja\" Kevin MacLeod (incompetech.com) · Licensed under Creative Commons: By Attribution 4.0 License · http://creativecommons.org/licenses/by/4.0/",
+      "changes": "Re-encoded as 160 kbps MP3"
+    }
+  },
+  {
+    "id": "another-step-back",
+    "original": "another-step-back.mp3",
+    "title": "Another Step Back",
+    "artist": "Of Far Different Nature",
+    "genre": "Drum & Bass",
+    "tier": "Expert",
+    "color": "#FFB84F",
+    "color2": "#FF5E7E",
+    "credit": {
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "source": "OpenGameArt",
+      "sourceUrl": "https://opengameart.org/content/another-step-back",
+      "changes": "Re-encoded as 160 kbps MP3"
+    }
+  },
+  {
+    "id": "final-hour",
+    "original": "final-hour.mp3",
+    "windowSeconds": 55,
+    "title": "Final Hour",
+    "artist": "isaiah658",
+    "genre": "Jungle",
+    "tier": "Extreme",
+    "color": "#FF6A3D",
+    "color2": "#C2185B",
+    "credit": {
+      "license": "CC0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": "OpenGameArt",
+      "sourceUrl": "https://opengameart.org/content/final-hour",
+      "changes": "Shortened to a 62 s excerpt (1:03–2:05) and re-encoded as 160 kbps MP3"
+    }
+  },
+  {
+    "id": "shortcuts",
+    "original": "shortcuts.mp3",
+    "windowSeconds": 55,
+    "title": "Shortcuts",
+    "artist": "Zane Little Music",
+    "genre": "Breakcore",
+    "tier": "Extreme",
+    "color": "#FFE14F",
+    "color2": "#FF3D3D",
+    "credit": {
+      "license": "CC0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": "OpenGameArt",
+      "sourceUrl": "https://opengameart.org/content/shortcuts",
+      "changes": "Shortened to a 62 s excerpt (2:19–3:21) and re-encoded as 160 kbps MP3"
+    }
+  },
+  {
+    "id": "ripped-apart",
+    "original": "ripped-apart.wav",
+    "windowSeconds": 55,
+    "title": "Ripped Apart",
+    "artist": "Tricks & Traps",
+    "genre": "Hardcore",
+    "tier": "Extreme",
+    "color": "#FF3D6E",
+    "color2": "#6A00FF",
+    "credit": {
+      "license": "CC0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": "OpenGameArt",
+      "sourceUrl": "https://opengameart.org/content/free-rhythm-game-music-pack-2",
+      "changes": "Shortened to a 62 s excerpt (1:22–2:25) and converted from WAV to MP3"
+    }
+  },
+  {
+    "id": "psychic",
+    "original": "psychic.wav",
+    "windowSeconds": 55,
+    "title": "Psychic",
+    "artist": "Tricks & Traps",
+    "genre": "Trance",
+    "tier": "Extreme",
+    "color": "#C04FFF",
+    "color2": "#00D2FF",
+    "credit": {
+      "license": "CC0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": "OpenGameArt",
+      "sourceUrl": "https://opengameart.org/content/free-rhythm-game-music-pack-1",
+      "changes": "Shortened to a 62 s excerpt (1:37–2:39) and converted from WAV to MP3"
+    }
+  },
+  {
+    "id": "hard-boss-battle",
+    "original": "hard-boss-battle.mp3",
+    "windowSeconds": 55,
+    "title": "Hard Boss Battle 1",
+    "artist": "MintoDog",
+    "genre": "Hardcore",
+    "tier": "Extreme",
+    "color": "#FF2E2E",
+    "color2": "#FF9F1C",
+    "credit": {
+      "license": "CC0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": "OpenGameArt",
+      "sourceUrl": "https://opengameart.org/content/hard-boss-battle-1",
+      "changes": "Shortened to a 63 s excerpt (0:14–1:18) and re-encoded as 160 kbps MP3"
+    }
+  }
+]

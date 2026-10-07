@@ -21,7 +21,15 @@ export interface Analysis {
 }
 
 /** credit for a licensed (non-original) track; shown in game and in MUSIC-LICENSE.md */
-export interface Credit { license: string; licenseUrl: string; source: string; sourceUrl: string }
+export interface Credit {
+  license: string; licenseUrl: string; source: string; sourceUrl: string;
+  /** the artist's own page, when they ask for a link */
+  artistUrl?: string;
+  /** exact credit wording the artist asks for */
+  attribution?: string;
+  /** what was changed from the original file (CC BY asks for this) */
+  changes?: string;
+}
 
 /** A record in song-data.json (the original soundtrack) or a custom import. */
 export interface Song {
