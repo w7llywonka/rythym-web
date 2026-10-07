@@ -68,14 +68,23 @@ How it's kept secure (`api/_lib/core.js`):
   - limits on password changes and saves
 - **Headers:** a strict Content-Security-Policy, HSTS, `X-Frame-Options: DENY`, `nosniff` and `no-referrer` (see `vercel.json`). API responses are never cached.
 
-### Turning accounts on (Vercel)
+### Turning accounts on
 
-Accounts are stored in Redis. With no store configured, the game still works and everyone plays as a guest.
+Accounts are stored in Redis. With no database connected, the game still works and everyone plays as a guest.
 
-1. In the Vercel project, open **Storage → Marketplace → Upstash (Redis)**, create a free database and connect it to the project. This sets `KV_REST_API_URL` and `KV_REST_API_TOKEN`. Alternatively, create a database at upstash.com and add `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` as environment variables.
-2. Redeploy.
+**Hosting on Railway (site + database):**
 
-`vercel.json` already sends `/api/*` to the single function in `api/index.js`.
+1. **New Project → Deploy from GitHub repo →** pick this repo. Railway runs `npm run build`, then `npm start` (`server.js` serves the game and the account API).
+2. In the same project: **+ New → Database → Add Redis**.
+3. Open the game service → **Variables → New Variable**: name `REDIS_URL`, value `${{Redis.REDIS_URL}}` (Railway fills in the database's private address).
+4. Game service → **Settings → Networking → Generate Domain**.
+5. Redeploy. The deploy logs should say `accounts: redis`.
+
+**Site on Vercel, database on Railway:** add a Redis database on Railway, copy its `REDIS_PUBLIC_URL`, and set it as `REDIS_URL` in the Vercel project's environment variables, then redeploy.
+
+**Vercel + Upstash:** in the Vercel project, open **Storage → Marketplace → Upstash (Redis)** and connect it (this sets `KV_REST_API_URL` / `KV_REST_API_TOKEN`), then redeploy. `vercel.json` sends `/api/*` to `api/index.js`.
+
+Any Redis server works the same way: set `REDIS_URL` (`redis://` or `rediss://`).
 
 ## Run locally
 
@@ -86,7 +95,7 @@ npm install
 npm run dev
 ```
 
-`npm run dev` also serves the account API. Accounts are kept in memory and reset when the dev server restarts, unless the Upstash variables above are set.
+`npm run dev` also serves the account API. Accounts are kept in memory and reset when the dev server restarts, unless `REDIS_URL` (or the Upstash variables) is set. To run the production build locally: `npm run build && npm start`.
 
 ```sh
 npm test        # charts, scoring, saves, imports and the account server

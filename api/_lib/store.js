@@ -75,8 +75,49 @@ export function upstashStore(url, token) {
   };
 }
 
-/** Upstash env vars (direct, or the names Vercel's marketplace integration sets). null if not configured. */
+/** Any regular Redis server by URL (redis:// or rediss://), e.g. Railway's Redis service. */
+export function redisStore(url) {
+  let ready = null;
+  // one shared connection, opened on first use and reused across requests
+  const client = () => {
+    ready ??= import('redis').then(async ({ createClient }) => {
+      const c = createClient({ url, socket: { reconnectStrategy: tries => Math.min(tries * 200, 3000) } });
+      c.on('error', err => console.error('[redis]', err.message));
+      await c.connect();
+      return c;
+    }).catch(err => { ready = null; throw err; });
+    return ready;
+  };
+  return {
+    kind: 'redis',
+    async get(key) { return (await client()).get(key); },
+    async set(key, value, { ex, nx } = {}) {
+      const opts = {};
+      if (ex) opts.EX = ex;
+      if (nx) opts.NX = true;
+      return (await (await client()).set(key, String(value), opts)) === 'OK';
+    },
+    async del(...keys) { if (keys.length) await (await client()).del(keys); },
+    async incr(key, windowSeconds) {
+      const c = await client();
+      const count = await c.incr(key);
+      if (count === 1) await c.expire(key, windowSeconds);
+      return count;
+    },
+    async sadd(key, member) { await (await client()).sAdd(key, member); },
+    async srem(key, member) { await (await client()).sRem(key, member); },
+    async smembers(key) { return (await client()).sMembers(key); },
+  };
+}
+
+/**
+ * Picks the account store from environment variables, or null if none is configured:
+ * - REDIS_URL / REDIS_PRIVATE_URL / REDIS_PUBLIC_URL (Railway Redis, or any Redis server)
+ * - UPSTASH_REDIS_REST_URL + _TOKEN, or KV_REST_API_URL + _TOKEN (Upstash / Vercel marketplace)
+ */
 export function storeFromEnv(env = process.env) {
+  const redisUrl = env.REDIS_URL || env.REDIS_PRIVATE_URL || env.REDIS_PUBLIC_URL;
+  if (redisUrl) return redisStore(redisUrl);
   const url = env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL;
   const token = env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN;
   return url && token ? upstashStore(url, token) : null;
