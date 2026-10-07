@@ -10,6 +10,7 @@
 // - Changing your password logs out every other device.
 
 import { randomBytes, scrypt as scryptCb, createHash, timingSafeEqual } from 'node:crypto';
+import { onlineRoutes } from './online.js';
 import { versusRoutes } from './versus.js';
 
 const SESSION_DAYS = 30;
@@ -117,6 +118,9 @@ export function createAuth(store, options = {}) {
     return s;
   }
 
+  const optionalSession = req => currentSession(req.token);
+  const online = onlineRoutes(store, { now, limit, requireSession, optionalSession, HttpError });
+
   const routes = {
     'POST auth/register': async req => {
       const { username, password } = req.body;
@@ -193,6 +197,7 @@ export function createAuth(store, options = {}) {
       await revokeAll(lower);
       await store.del(`user:${lower}`, `save:${lower}`);
       await store.zrem('online', s.user.username);
+      await online.forget(s.user.username);
       return { body: { ok: true }, session: null };
     },
 
@@ -217,7 +222,7 @@ export function createAuth(store, options = {}) {
     },
   };
 
-  Object.assign(routes, versusRoutes(store, { now, limit, requireSession, HttpError }));
+  Object.assign(routes, online.routes, versusRoutes(store, { now, limit, requireSession, HttpError }));
 
   /**
    * @param {{method:string, path:string, query?:Record<string,string>, headers:Record<string,string|undefined>, rawBody:string, ip:string, secure:boolean}} req

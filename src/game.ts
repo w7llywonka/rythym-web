@@ -3,7 +3,7 @@
 import { cancel, ease, fade, pop, tween } from './anim.ts';
 import type { AudioEngine } from './audio.ts';
 import { JUDGMENTS, K, MINE_HIT, MISS, MODES, STYLES, T, type Judgment, type Mode, type Style } from './config.ts';
-import { styleHold, styleNote } from './look.ts';
+import { lighten, styleHold, styleNote } from './look.ts';
 import { comboMultiplier, fmtTime, formatNumber, keyName, setMultiplier, setSummary } from './scoring.ts';
 import type { Diff, Lane, PlaySet, Settings, Track } from './types.ts';
 import { $, rgba, show, txt } from './ui.ts';
@@ -40,11 +40,6 @@ export interface GameHooks {
 const LANE_X: Record<number, number> = { 1: 12, 2: 176 };
 const LANE_W = 156;
 const HIT_Y = 576 - 14 - 104 / 2; // receptor centre inside the lane
-const LIGHTEN = (hex: string, k: number) => {
-  const n = parseInt(hex.slice(1), 16);
-  const ch = (s: number) => Math.round(((n >> s) & 255) + (255 - ((n >> s) & 255)) * k);
-  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
-};
 
 export class Game {
   run: Run | null = null;
@@ -56,9 +51,8 @@ export class Game {
   private held: Record<number, boolean> = { 1: false, 2: false };
   private cue: Record<number, number> = { 1: -1, 2: -1 };
 
-  constructor(private audio: AudioEngine, private hooks: GameHooks) {
-    this.applyHudLayout();
-  }
+  /** no DOM work here: the UI is built after the modules load; call applyHudLayout() once it exists */
+  constructor(private audio: AudioEngine, private hooks: GameHooks) {}
 
   private laneColor(lane: Lane) { return this.hooks.settings().laneColors[lane - 1]; }
 
@@ -238,7 +232,7 @@ export class Game {
     const target = $(`game.pf.lane${lane}.rec.target`);
     const color = this.laneColor(lane);
     target.style.height = `${3 + 2 * q}px`;
-    target.style.backgroundColor = q > 0 ? LIGHTEN(color, 0.6 * q) : color;
+    target.style.backgroundColor = q > 0 ? lighten(color, 0.6 * q) : color;
     target.style.boxShadow = `0 0 ${8 + 14 * q}px ${rgba(color, 0.4 - 0.5 * q)}`;
     $(`game.pf.lane${lane}.rec`).style.backgroundColor = rgba(color, 0.94 - 0.08 * q);
   }
@@ -576,7 +570,7 @@ export class Game {
       txt($('game.left.pill.text'), mode.label);
       txt($('game.left.style'), r.summary);
       $('game.left.style').style.color = unranked ? T.red : r.weekly !== undefined ? T.gold : T.muted;
-      $('game.left.progress.fill').style.width = '0%';
+      $('game.left.progress.fill').style.transform = 'scaleX(0)';
       txt($('game.left.time'), `0:00 / ${fmtTime(chartEnd - r.startAt)}`);
       for (const lane of [1, 2] as Lane[]) {
         txt($(`game.pf.lane${lane}.rec.key`), keyName(settings.keys[lane - 1]));
@@ -585,6 +579,9 @@ export class Game {
       show($('game.pf.flashlight'), set.flashlight);
       show($('game.left.versus'), !!opts?.versus);
       this.applyHudLayout();
+      const bd = $('backdrop');
+      bd.style.setProperty('--ga', settings.laneColors[0]);
+      bd.style.setProperty('--gb', settings.laneColors[1]);
       this.setCombo(0);
       txt(this.judgeEl, '');
       txt(this.timingEl, '');
@@ -766,7 +763,7 @@ export class Game {
     }
 
     const total = r.chartEnd + r.offset;
-    $('game.left.progress.fill').style.width = `${Math.min(1, Math.max(0, (t - r.startAt) / (total - r.startAt))) * 100}%`;
+    $('game.left.progress.fill').style.transform = `scaleX(${Math.min(1, Math.max(0, (t - r.startAt) / (total - r.startAt))).toFixed(4)})`;
     txt($('game.left.time'), `${fmtTime(t - r.startAt)} / ${fmtTime(r.chartEnd - r.startAt)}`);
 
     if (r.health <= 0 && !r.style.noFail) {

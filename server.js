@@ -3,6 +3,7 @@
 // Security headers come from vercel.json so both deployments send the same ones.
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
+import { brotliCompressSync, constants as zlib, gzipSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,10 +36,30 @@ export function createApp({ dist = join(here, 'dist'), store = storeFromEnv(), t
   const headers = securityHeaders();
   const handle = store ? createAuth(store) : null;
 
-  async function serveFile(res, path, cache) {
-    const body = await readFile(path);
-    res.writeHead(200, { ...headers, 'Content-Type': TYPES[extname(path)] ?? 'application/octet-stream', 'Cache-Control': cache });
-    res.end(body);
+  // text files are compressed once (brotli / gzip) and kept in memory
+  const COMPRESSIBLE = new Set(['.html', '.js', '.css', '.svg', '.json', '.txt', '.webmanifest']);
+  const packed = new Map();
+  async function serveFile(req, res, path, cache) {
+    const type = TYPES[extname(path)] ?? 'application/octet-stream';
+    const accept = String(req.headers['accept-encoding'] ?? '');
+    const wants = accept.split(',').map(e => e.trim().split(';')[0]);
+    const encoding = !COMPRESSIBLE.has(extname(path)) ? null : wants.includes('br') ? 'br' : wants.includes('gzip') ? 'gzip' : null;
+    let entry = packed.get(path);
+    if (!entry) {
+      const raw = await readFile(path);
+      entry = { raw, br: null, gzip: null };
+      if (COMPRESSIBLE.has(extname(path))) {
+        entry.br = brotliCompressSync(raw, { params: { [zlib.BROTLI_PARAM_QUALITY]: 10 } });
+        entry.gzip = gzipSync(raw, { level: 9 });
+      }
+      packed.set(path, entry);
+    }
+    const body = encoding ? entry[encoding] : entry.raw;
+    res.writeHead(200, {
+      ...headers, 'Content-Type': type, 'Cache-Control': cache, Vary: 'Accept-Encoding',
+      ...(encoding ? { 'Content-Encoding': encoding } : {}), 'Content-Length': body.length,
+    });
+    res.end(req.method === 'HEAD' ? undefined : body);
   }
 
   return createServer(async (req, res) => {
@@ -66,10 +87,10 @@ export function createApp({ dist = join(here, 'dist'), store = storeFromEnv(), t
         const info = await stat(path).catch(() => null);
         if (info?.isFile()) {
           const hashed = path.startsWith(join(root, 'assets') + sep);
-          return await serveFile(res, path, hashed ? 'public, max-age=31536000, immutable' : 'no-cache');
+          return await serveFile(req, res, path, hashed ? 'public, max-age=31536000, immutable' : 'no-cache');
         }
       }
-      return await serveFile(res, join(root, 'index.html'), 'no-cache');
+      return await serveFile(req, res, join(root, 'index.html'), 'no-cache');
     } catch (err) {
       console.error('[server]', err);
       if (!res.headersSent) res.writeHead(500, { ...headers, 'Content-Type': 'text/plain' });

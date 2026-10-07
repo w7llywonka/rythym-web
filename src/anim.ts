@@ -57,17 +57,10 @@ export function cancel(target: object, channel?: string) {
 }
 
 // convenience helpers for elements
-const num = (el: HTMLElement, prop: string, fallback: number) => {
-  const v = parseFloat(el.style.getPropertyValue(prop));
-  return Number.isFinite(v) ? v : fallback;
-};
 
 /** UIScale pop: snap to `from`, ease back to 1 */
 export function pop(el: HTMLElement, from: number, seconds: number, easing: Ease = ease.quad) {
   tween(el, 'scale', from, 1, seconds, v => el.style.setProperty('--s', String(v)), easing);
-}
-export function scaleTo(el: HTMLElement, to: number, seconds: number, easing: Ease = ease.quad) {
-  tween(el, 'scale', num(el, '--s', 1), to, seconds, v => el.style.setProperty('--s', String(v)), easing);
 }
 export function fade(el: HTMLElement, to: number, seconds: number, delay = 0, easing: Ease = ease.quad, done?: () => void) {
   const from = el.style.opacity === '' ? 1 : parseFloat(el.style.opacity);

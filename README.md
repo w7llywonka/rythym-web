@@ -42,7 +42,10 @@ Perfect, Great and Good score 300/200/100. Combos of 10/25/50 give ×2/×3/×4. 
 
 **1v1** (needs an account): open 1V1 on the home screen to see who's online and challenge them on the song you have selected. They get a pop-up for 20 seconds; once accepted, you both start the same chart at the same server moment, see each other's live score, combo and health, and can send reactions with keys 1–4 (🔥 😂 😤 GG). No pausing; leaving counts as a forfeit. Highest score wins.
 
-Still to come from the Roblox version: global leaderboards, King of the Hill and the cross-server live feed (the live feed currently shows your own big plays).
+**Online** (needs the server; anyone can view, an account is needed to post):
+- **Leaderboards**: every built-in chart has a global top 10 (TOP 10 on the song panel) with your own best and rank. Finishing a ranked run posts your score; the results screen shows your worldwide rank. Scores above what the chart allows are rejected.
+- **King of the Hill**: the weekly challenge has its own board; #1 is the King, shown on the home screen.
+- **Live feed**: new #1s, SS ranks, full combos on Expert+ and new Kings show up for everyone on the home screen.
 
 ## Accounts
 
@@ -126,15 +129,19 @@ Timing runs on the Web Audio clock (`AudioContext.currentTime`) with latency com
 
 ## Source
 
-- `src/main.ts`: screens, menus, results, progression, settings, accounts
+- `src/main.ts`: startup (builds the UI, wires every screen, restores the session)
+- `src/app/`: one module per screen or panel, sharing `state.ts`
+  - `home` · `select` (song list + imports) · `play` (start / pause / quit) · `results` · `board` (leaderboards) · `versus` (1v1) · `profile` · `stylePanel` · `settingsPanel` · `customize` · `calibration` · `accounts`
+  - `shell` (screens, panels, toasts) · `save` · `preview` (menu music) · `keyboard` · `loop` (frame loop) · `services` (audio + game engines)
 - `src/game.ts`: gameplay (notes, holds, mines, judging, health, HUD)
-- `src/ui.ts`, `src/style.css`, `src/anim.ts`: the UI, laid out like the Roblox ScreenGui (1100×640, scaled to fit)
-- `src/config.ts`: tiers, styles, modifiers, packs and achievements
-- `src/chart.ts`, `src/tracks.ts`: chart generation
-- `src/audio.ts`, `src/synthesis.ts`, `src/custom.ts`: audio, the soundtrack and imports
-- `src/scoring.ts`, `src/storage.ts`, `src/weekly.ts`, `src/account.ts`: rules, saves, the weekly challenge and the account client
-- `api/`: the account server (Vercel function), with `api/_lib/core.js` and `api/_lib/store.js`
-- `scripts/`: offline music generation and analysis
+- `src/ui.ts`, `src/style.css`, `src/anim.ts`, `src/look.ts`: the interface, laid out like the Roblox ScreenGui (1100×640, scaled to fit), and how the lines look
+- `src/chart.ts`, `src/tracks.ts`, `src/custom.ts`: chart generation and the import beatmapper
+- `src/audio.ts`, `src/synthesis.ts`: Web Audio playback and the soundtrack
+- `src/config.ts`, `src/scoring.ts`, `src/storage.ts`, `src/weekly.ts`, `src/api.ts`: rules, saves, the weekly challenge and the server client
+- `shared/`: used by both the game and the server (`weekly.js`, `chart-objects.json` from `npm run charts`)
+- `api/_lib/`: the server: `core.js` (accounts, sessions, security), `online.js` (boards, feed), `versus.js` (1v1), `catalog.js`, `store.js` (Redis / Upstash / memory)
+- `server.js`: Node server for Railway (static files with compression + the API); `api/index.js`: the same API as a Vercel function
+- `scripts/`: music generation, analysis and `chart-objects.ts`
 - `tests/`
 
 Code is MIT licensed. The original music recipes and generated audio are dedicated to CC0.

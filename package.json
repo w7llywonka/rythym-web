@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "start": "node server.js",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --experimental-strip-types --test tests/*.test.ts"
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "charts": "node --experimental-strip-types scripts/chart-objects.ts"
   },
   "devDependencies": {
     "typescript": "~5.9.3",

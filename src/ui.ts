@@ -120,13 +120,15 @@ function panel(parent: HTMLElement, name: string, w: number, h: number) {
 export function buildUI(app: HTMLElement) {
   app.innerHTML = '';
   app.dataset.path = '';
-  const backdrop = frame(app, 'backdrop', { cls: 'fill', bg: '#000000' });
-  void backdrop;
+  const backdrop = frame(app, 'backdrop', { cls: 'fill backdrop', bg: '#000000' });
+  frame(backdrop, 'glowa', { cls: 'glow glowa' });
+  frame(backdrop, 'glowb', { cls: 'glow glowb' });
   const root = frame(app, 'root', { cls: 'stage' });
   root.dataset.path = ''; // screens are addressed directly: 'home.play', 'select.list', ...
 
   // HOME ---------------------------------------------------------------
   const home = frame(root, 'home', { cls: 'fill' });
+  frame(home, 'logoglow', { ax: 0.5, x: [0.5, 0], y: 52, w: 900, h: 250, cls: 'logoglow' });
   const logo = frame(home, 'logo', { ax: 0.5, x: [0.5, 0], y: 92, w: 700, h: 170, cls: 'pop' });
   label(logo, 'line', { text: 'LINE', font: 'black', size: 116, align: 'right', w: 330, h: 140 });
   label(logo, 'rush', { text: 'RUSH', font: 'black', size: 116, x: 352, w: 360, h: 140, cls: 'gradtext' });
@@ -150,6 +152,7 @@ export function buildUI(app: HTMLElement) {
   label(weekly, 'song', { text: '-', font: 'black', size: 20, truncate: true, x: 16, y: 36, w: 288, h: 26 });
   label(weekly, 'mods', { text: '', size: 12, color: T.muted, x: 16, y: 64, w: 288, h: 16 });
   label(weekly, 'kinglabel', { text: 'KING OF THE HILL', font: 'black', size: 9, color: T.dim, x: 16, y: 92, w: 200, h: 12 });
+  button(weekly, 'board', { text: 'TOP 10 →', size: 10, ax: 1, x: [1, -16], y: 86, w: 76, h: 24, r: 8, bg: T.bg2 });
   label(weekly, 'king', { text: 'Nobody yet. Claim it!', size: 14, truncate: true, x: 16, y: 106, w: 288, h: 18 });
   label(weekly, 'mine', { text: '', font: 'med', size: 12, color: T.muted, x: 16, y: 128, w: 288, h: 16 });
   button(weekly, 'play', { text: 'PLAY WEEKLY', size: 13, x: 16, y: 172, w: 288, h: 46, color: T.gold });
@@ -176,7 +179,7 @@ export function buildUI(app: HTMLElement) {
   frame(select, 'list', { x: 30, y: 152, w: 570, h: 462, scroll: true });
   label(select, 'empty', { text: '', size: 18, color: T.muted, align: 'center', wrap: true, x: 30, y: 250, w: 570, h: 80, hidden: true });
 
-  const detail = frame(select, 'detail', { x: 630, y: 92, w: 440, h: 522, bg: T.bg1, r: 20, stroke: T.line });
+  const detail = frame(select, 'detail', { x: 630, y: 92, w: 440, h: 522, bg: T.bg1, r: 20, stroke: T.line, cls: 'detail-glow' });
   const cover = frame(detail, 'cover', { x: 20, y: 20, w: 400, h: 100, r: 14 });
   label(cover, 'genre', { text: 'GENRE', font: 'black', size: 13, textT: 0.15, x: 18, y: 14, w: 300, h: 16 });
   const pill = frame(cover, 'pill', { x: 18, y: 36, w: 86, h: 24, bg: T.bg0, bgT: 0.35, r: 12 });
@@ -254,7 +257,7 @@ export function buildUI(app: HTMLElement) {
   label(dp, 'text', { text: 'EASY', font: 'black', size: 11, color: T.bg0, align: 'center', w: [1, 0], h: [1, 0] });
   label(left, 'style', { text: '', font: 'black', size: 11, color: T.muted, truncate: true, x: 98, y: 148, w: 230, h: 24 });
   const prog = frame(left, 'progress', { x: 0, y: 192, w: 300, h: 4, bg: T.bg2, r: 2, clip: true });
-  frame(prog, 'fill', { w: [0, 0], h: [1, 0], r: 2, bg: T.text });
+  frame(prog, 'fill', { w: [1, 0], h: [1, 0], r: 2, bg: T.text, cls: 'scalex' });
   label(left, 'time', { text: '0:00 / 0:00', size: 13, color: T.muted, x: 0, y: 204, w: 300, h: 16 });
   const vs = frame(left, 'versus', { x: 0, y: 240, w: 320, h: 150, bg: T.bg1, r: 14, stroke: T.line, hidden: true });
   label(vs, 'label', { text: 'VS', font: 'black', size: 12, color: T.pink, x: 14, y: 10, w: 40, h: 14 });
@@ -310,6 +313,7 @@ export function buildUI(app: HTMLElement) {
   label(rp, 'scorelabel', { text: 'SCORE', font: 'black', size: 10, color: T.muted, x: 380, y: 110, w: 200, h: 14 });
   label(rp, 'xp', { text: '', font: 'black', size: 14, color: T.gold, align: 'right', ax: 1, x: 820, y: 110, w: 300, h: 16 });
   label(rp, 'score', { text: '0', font: 'black', size: 54, x: 378, y: 124, w: 440, h: 60 });
+  label(rp, 'rank', { text: '', font: 'black', size: 12, color: T.cyan, align: 'right', ax: 1, x: 820, y: 154, w: 300, h: 16 });
   ['accuracy', 'maxcombo'].forEach((nm, i) => {
     const box = frame(rp, nm, { x: 380 + i * 226, y: 196, w: 214, h: 70, r: 12, bg: T.bg2 });
     label(box, 'label', { text: nm === 'maxcombo' ? 'MAX COMBO' : 'ACCURACY', font: 'black', size: 10, color: T.muted, x: 16, y: 12, w: 180, h: 14 });

@@ -1,0 +1,92 @@
+{
+  "afterglow": {
+    "title": "Afterglow Avenue",
+    "difficulty": "Easy",
+    "duration": 49.3,
+    "charts": {
+      "Easy": 65,
+      "Hard": 153
+    }
+  },
+  "glasshouse": {
+    "title": "Glasshouse",
+    "difficulty": "Easy",
+    "duration": 49.3,
+    "charts": {
+      "Easy": 69,
+      "Hard": 150
+    }
+  },
+  "orbit": {
+    "title": "Paper Satellites",
+    "difficulty": "Easy",
+    "duration": 50.1,
+    "charts": {
+      "Easy": 69,
+      "Hard": 182
+    }
+  },
+  "prism": {
+    "title": "Prism Parade",
+    "difficulty": "Easy",
+    "duration": 50.9,
+    "charts": {
+      "Easy": 75,
+      "Hard": 187
+    }
+  },
+  "daybreak": {
+    "title": "Daybreak Circuit",
+    "difficulty": "Easy",
+    "duration": 51.6,
+    "charts": {
+      "Easy": 75,
+      "Hard": 217
+    }
+  },
+  "current": {
+    "title": "Voltage Current",
+    "difficulty": "Hard",
+    "duration": 49.9,
+    "charts": {
+      "Hard": 202,
+      "Expert": 277
+    }
+  },
+  "undertow": {
+    "title": "Midnight Undertow",
+    "difficulty": "Hard",
+    "duration": 49.9,
+    "charts": {
+      "Hard": 211,
+      "Expert": 267
+    }
+  },
+  "hyperlane": {
+    "title": "Hyperlane",
+    "difficulty": "Hard",
+    "duration": 49.9,
+    "charts": {
+      "Hard": 209,
+      "Expert": 256
+    }
+  },
+  "redline": {
+    "title": "Redline Reverie",
+    "difficulty": "Hard",
+    "duration": 49.8,
+    "charts": {
+      "Hard": 206,
+      "Expert": 250
+    }
+  },
+  "zenith": {
+    "title": "Zenith Overdrive",
+    "difficulty": "Hard",
+    "duration": 49.8,
+    "charts": {
+      "Hard": 206,
+      "Expert": 246
+    }
+  }
+}

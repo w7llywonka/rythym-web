@@ -4,16 +4,19 @@
 // - memoryStore: local dev and tests
 //
 // Interface: get, mget, set(ex/nx), del, incr(window), sadd/srem/smembers,
-// zadd/zrangebyscore/zremrangebyscore/zrem (sorted sets), rpush(ttl)/drain (lists).
+// zadd/zrangebyscore/zremrangebyscore/zrem (sorted sets), rpush(ttl)/drain (lists),
+// leaderboards: zbest (keep the higher score), ztop (highest first, with scores), zrankOf,
+// feed: lpushCapped (newest first, trimmed), lrange.
 
 const score = v => (v === '+inf' ? Infinity : v === '-inf' ? -Infinity : Number(v));
 
-export function memoryStore() {
+/** @param {{ now?: () => number }} [options] tests pass their own clock */
+export function memoryStore({ now = Date.now } = {}) {
   const data = new Map(); // key -> { v, exp }
   const live = key => {
     const e = data.get(key);
     if (!e) return undefined;
-    if (e.exp && e.exp <= Date.now()) { data.delete(key); return undefined; }
+    if (e.exp && e.exp <= now()) { data.delete(key); return undefined; }
     return e;
   };
   return {
@@ -21,13 +24,13 @@ export function memoryStore() {
     async get(key) { const e = live(key); return e && typeof e.v === 'string' ? e.v : null; },
     async set(key, value, { ex, nx } = {}) {
       if (nx && live(key)) return false;
-      data.set(key, { v: String(value), exp: ex ? Date.now() + ex * 1000 : 0 });
+      data.set(key, { v: String(value), exp: ex ? now() + ex * 1000 : 0 });
       return true;
     },
     async del(...keys) { for (const k of keys) data.delete(k); },
     async incr(key, windowSeconds) {
       const e = live(key);
-      if (!e) { data.set(key, { v: '1', exp: Date.now() + windowSeconds * 1000 }); return 1; }
+      if (!e) { data.set(key, { v: '1', exp: now() + windowSeconds * 1000 }); return 1; }
       e.v = String(Number(e.v) + 1);
       return Number(e.v);
     },
@@ -59,7 +62,7 @@ export function memoryStore() {
     async rpush(key, value, ttl) {
       const e = live(key) ?? { v: [], exp: 0 };
       e.v.push(String(value));
-      e.exp = Date.now() + ttl * 1000;
+      e.exp = now() + ttl * 1000;
       data.set(key, e);
     },
     async drain(key) {
@@ -67,6 +70,35 @@ export function memoryStore() {
       data.delete(key);
       return e ? e.v : [];
     },
+    async zbest(key, score, member, ttl) {
+      const e = live(key) ?? { v: new Map(), exp: 0 };
+      const old = e.v.get(member);
+      if (ttl) e.exp = now() + ttl * 1000;
+      data.set(key, e);
+      if (old !== undefined && old >= score) return false;
+      e.v.set(member, score);
+      return true;
+    },
+    async ztop(key, count) {
+      const e = live(key);
+      if (!e) return [];
+      return [...e.v].sort((a, b) => b[1] - a[1]).slice(0, count).map(([member, score]) => ({ member, score }));
+    },
+    async zrankOf(key, member) {
+      const e = live(key);
+      const score = e?.v.get(member);
+      if (score === undefined) return null;
+      let above = 0;
+      for (const sc of e.v.values()) if (sc > score) above++;
+      return { score, rank: above + 1 };
+    },
+    async lpushCapped(key, value, max) {
+      const e = live(key) ?? { v: [], exp: 0 };
+      e.v.unshift(String(value));
+      e.v.length = Math.min(e.v.length, max);
+      data.set(key, e);
+    },
+    async lrange(key, count) { const e = live(key); return e ? e.v.slice(0, count) : []; },
   };
 }
 
@@ -118,6 +150,24 @@ export function upstashStore(url, token) {
       const json = await send('/multi-exec', [['LRANGE', key, '0', '-1'], ['DEL', key]]);
       return json[0]?.result ?? [];
     },
+    async zbest(key, score, member, ttl) {
+      const cmds = [['ZADD', key, 'GT', 'CH', String(score), member]];
+      if (ttl) cmds.push(['EXPIRE', key, String(ttl)]);
+      const [changed] = await pipeline(...cmds);
+      return Number(changed) > 0;
+    },
+    async ztop(key, count) {
+      const flat = (await cmd('ZRANGE', key, '0', String(count - 1), 'REV', 'WITHSCORES')) ?? [];
+      const out = [];
+      for (let i = 0; i < flat.length; i += 2) out.push({ member: flat[i], score: Number(flat[i + 1]) });
+      return out;
+    },
+    async zrankOf(key, member) {
+      const [score, rank] = await pipeline(['ZSCORE', key, member], ['ZREVRANK', key, member]);
+      return score === null || rank === null ? null : { score: Number(score), rank: Number(rank) + 1 };
+    },
+    async lpushCapped(key, value, max) { await pipeline(['LPUSH', key, String(value)], ['LTRIM', key, '0', String(max - 1)]); },
+    async lrange(key, count) { return (await cmd('LRANGE', key, '0', String(count - 1))) ?? []; },
   };
 }
 
@@ -163,6 +213,23 @@ export function redisStore(url) {
       const [items] = await (await client()).multi().lRange(key, 0, -1).del(key).exec();
       return items ?? [];
     },
+    async zbest(key, score, member, ttl) {
+      const c = await client();
+      const changed = await c.zAdd(key, { score, value: member }, { GT: true, CH: true });
+      if (ttl) await c.expire(key, ttl);
+      return Number(changed) > 0;
+    },
+    async ztop(key, count) {
+      const rows = await (await client()).zRangeWithScores(key, 0, count - 1, { REV: true });
+      return rows.map(r => ({ member: r.value, score: r.score }));
+    },
+    async zrankOf(key, member) {
+      const c = await client();
+      const [score, rank] = await Promise.all([c.zScore(key, member), c.zRevRank(key, member)]);
+      return score === null || rank === null ? null : { score, rank: rank + 1 };
+    },
+    async lpushCapped(key, value, max) { await (await client()).multi().lPush(key, String(value)).lTrim(key, 0, max - 1).exec(); },
+    async lrange(key, count) { return (await client()).lRange(key, 0, count - 1); },
   };
 }
 

@@ -10,7 +10,6 @@ export const T = {
 
 export const K = {
   LEAD_IN: 3, // real seconds of countdown before the music starts
-  NOTE_THICKNESS: 24, // height of the falling lines (px)
   PREVIEW_LENGTH: 30,
   MAX_TICKS: 24,
   MAX_RECENT: 10,
@@ -91,7 +90,6 @@ export const JUDGMENTS: Judgment[] = [
 ];
 export const MISS = { name: 'MISS', color: T.red };
 export const MINE_HIT = { name: 'MINE!', color: T.red };
-export const LANE_COLORS: Record<number, string> = { 1: T.cyan, 2: T.pink };
 
 export const HIT_SOUNDS: HitSound[] = ['OFF', 'TICK', 'MANIA', 'KICK', 'CLAP'];
 

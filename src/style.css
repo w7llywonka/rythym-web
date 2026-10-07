@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+/* Inter is loaded from index.html (preconnected, so it doesn't wait behind this file) */
 
 :root { --fit: 1; }
 * { box-sizing: border-box; }
@@ -71,11 +71,27 @@ button.f:focus-visible { outline: 2px solid rgba(43, 212, 255, .7); outline-offs
 .scroll::-webkit-scrollbar { width: 4px; }
 .scroll::-webkit-scrollbar-thumb { background: #25252E; border-radius: 2px; }
 .cards { position: absolute; left: 1px; top: 1px; right: 12px; display: flex; flex-direction: column; gap: 8px; padding-bottom: 2px; }
-.card { position: relative !important; flex: 0 0 76px; width: 100%; cursor: pointer; transform: none !important; transition: background-color .12s, box-shadow .12s; }
+.card {
+  position: relative !important; flex: 0 0 76px; width: 100%; cursor: pointer; transform: none !important; text-align: left;
+  border-radius: 14px; background: #0E0E12; box-shadow: 0 0 0 1px #25252E; transition: background-color .15s, box-shadow .15s;
+}
+.card:hover { background: #15151B; }
+.card.on { background: #15151B; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent), 0 8px 28px -12px color-mix(in srgb, var(--accent) 55%, transparent); }
+.card > * { position: absolute; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .cover { left: 12px; top: 10px; width: 56px; height: 56px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+.card .cover b { font-size: 19px; font-weight: 700; letter-spacing: -.02em; line-height: 1; color: #fff; }
+.card .cover span { font-size: 9px; font-weight: 600; letter-spacing: .1em; color: rgba(255,255,255,.75); margin-top: 3px; }
+.card .title { left: 84px; top: 15px; width: 320px; font-size: 17px; font-weight: 600; letter-spacing: -.01em; line-height: 24px; color: #F4F4F6; }
+.card .sub { left: 84px; top: 41px; width: 320px; font-size: 12.5px; font-weight: 500; line-height: 18px; color: #8A8A97; }
+.card .level { right: 18px; top: 16px; width: 180px; text-align: right; font-size: 11px; font-weight: 600; letter-spacing: .08em; line-height: 18px; color: #8A8A97; }
+.card .grade { right: 18px; top: 36px; width: 60px; text-align: right; font-size: 20px; font-weight: 700; line-height: 26px; }
+.card .stars { right: 86px; top: 46px; display: flex; gap: 6px; overflow: visible; }
+.card .stars i { width: 6px; height: 6px; border-radius: 50%; }
 
 /* panels / overlays */
-.dimmer { transition: opacity .2s; opacity: 0; }
-.dimmer.on { opacity: .72; }
+/* the backdrop only catches clicks while it's showing (not while it fades out) */
+.dimmer { transition: opacity .2s; opacity: 0; pointer-events: none; }
+.dimmer.on { opacity: .72; pointer-events: auto; }
 .fader { opacity: 0; transition: opacity .15s; }
 .toast { box-shadow: 0 0 0 1px #25252E, 0 12px 40px rgba(0, 0, 0, .5); }
 
@@ -123,3 +139,38 @@ button.f:focus-visible { outline: 2px solid rgba(43, 212, 255, .7); outline-offs
 .vsbtn { height: 36px; padding: 0 18px; border: 0; border-radius: 10px; background: #F4F4F6; color: #08080A; font: 700 12px 'Inter', sans-serif; letter-spacing: .08em; cursor: pointer; transition: filter .15s; }
 .vsbtn:hover { filter: brightness(.9); }
 .vsbtn:disabled { background: #1D1D25; color: #52525C; cursor: default; filter: none; }
+
+/* background glows (Roblox GlowA / GlowB): two soft lights that breathe with the beat */
+.backdrop { overflow: hidden; }
+.glow { pointer-events: none; border-radius: 50%; will-change: opacity, transform; }
+/* the glow colors follow what's on screen (song colors in select, lane colors in a run, grade on results) */
+@property --ga { syntax: '<color>'; inherits: true; initial-value: #2BD4FF; }
+@property --gb { syntax: '<color>'; inherits: true; initial-value: #FF5CA8; }
+.backdrop { transition: --ga 1.2s ease, --gb 1.2s ease; }
+.glowa {
+  left: -18vmax; top: -24vmax; width: 72vmax; height: 72vmax;
+  background: radial-gradient(circle, color-mix(in srgb, var(--ga) 17%, transparent) 0%, color-mix(in srgb, var(--ga) 5%, transparent) 38%, transparent 66%);
+  opacity: calc(.6 + var(--beat, 0) * .4); animation: drift-a 26s ease-in-out infinite alternate;
+}
+.glowb {
+  left: auto; top: auto; right: -22vmax; bottom: -28vmax; width: 78vmax; height: 78vmax;
+  background: radial-gradient(circle, color-mix(in srgb, var(--gb) 15%, transparent) 0%, color-mix(in srgb, var(--gb) 4.5%, transparent) 38%, transparent 66%);
+  opacity: calc(.6 + var(--beat, 0) * .4); animation: drift-b 31s ease-in-out infinite alternate;
+}
+@keyframes drift-a { to { transform: translate(6vmax, 4vmax) scale(1.08); } }
+@keyframes drift-b { to { transform: translate(-5vmax, -6vmax) scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .glowa, .glowb { animation: none; } }
+
+/* depth: panels get a faint top sheen, the main button a soft glow */
+.panel, .card.on { background-image: linear-gradient(180deg, rgba(255, 255, 255, .028), rgba(255, 255, 255, 0) 45%); }
+.btn.primary { box-shadow: 0 6px 24px -10px rgba(244, 244, 246, .45) !important; }
+.btn.primary:hover { filter: brightness(1); box-shadow: 0 8px 30px -8px rgba(244, 244, 246, .6) !important; }
+.scalex { transform-origin: 0 50%; transform: scaleX(0); }
+
+/* soft light behind the logo */
+.logoglow {
+  pointer-events: none; border-radius: 50%;
+  background: radial-gradient(closest-side at 38% 50%, rgba(43, 212, 255, .11), transparent), radial-gradient(closest-side at 64% 50%, rgba(255, 92, 168, .1), transparent);
+}
+/* the song detail panel picks up the selected song's color */
+.detail-glow { box-shadow: 0 0 0 1px #25252E, 0 40px 120px -50px color-mix(in srgb, var(--accent, #2BD4FF) 70%, transparent) !important; transition: box-shadow .6s; }

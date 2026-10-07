@@ -26,8 +26,10 @@ test('serves the app, hashed assets and security headers; never files outside di
     assert.ok(r.headers.get('content-security-policy')?.includes("frame-ancestors 'none'"));
     assert.equal(r.headers.get('x-frame-options'), 'DENY');
 
-    r = await fetch(`${app.base}/assets/app-abc123.js`);
+    r = await fetch(`${app.base}/assets/app-abc123.js`, { headers: { 'accept-encoding': 'br, gzip' } });
     assert.equal(r.headers.get('content-type'), 'text/javascript; charset=utf-8');
+    assert.equal(r.headers.get('content-encoding'), 'br', 'text files are compressed');
+    assert.equal(await r.text(), 'console.log(1)');
     assert.match(r.headers.get('cache-control') ?? '', /immutable/);
 
     for (const path of ['/../package.json', '/..%2f..%2fpackage.json', '/%2e%2e/server.js', '/some/route']) {

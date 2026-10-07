@@ -10,23 +10,13 @@
 //   vs:final:{id}:{user}    final score (written once)
 //   vs:forfeit:{id}         who gave up
 //   vs:inbox:{user}         small events: declined, reactions, opponent finished...
-import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { SONGS, chartExists } from './catalog.js';
 
 const ONLINE_MS = 25_000; // a player counts as online if they've polled in this window
 const INVITE_SECONDS = 20;
 const START_DELAY_MS = 6_000; // accept -> first beat
 const REACTIONS = 4;
-const NEXT = { Easy: 'Hard', Hard: 'Expert', Expert: 'Extreme', Extreme: 'Insane' };
-
-// built-in songs only (an imported file only exists on one player's computer)
-const SONGS = new Map();
-try {
-  const data = JSON.parse(readFileSync(new URL('../../src/song-data.json', import.meta.url), 'utf8'));
-  for (const { song } of data) SONGS.set(song.id, { id: song.id, title: song.title, difficulty: song.difficulty, duration: song.duration });
-} catch (err) {
-  console.error('[versus] could not read the song list', err);
-}
 
 const clampInt = (v, max) => Math.max(0, Math.min(max, Math.floor(Number(v) || 0)));
 const clampNum = (v, max) => Math.max(0, Math.min(max, Number(v) || 0));
@@ -122,8 +112,7 @@ export function versusRoutes(store, { now, limit, requireSession, HttpError }) {
       const { name, lower } = me(s);
       await limit(`vschal:${lower}`, 12, 60, 'Too many challenges. Wait a minute.');
       const { to, songId, diff } = req.body;
-      const song = SONGS.get(songId);
-      if (!song || (diff !== song.difficulty && diff !== NEXT[song.difficulty])) throw new HttpError(400, 'Pick one of the Line Rush songs first (imported songs only exist on your computer).');
+      if (!chartExists(songId, diff)) throw new HttpError(400, 'Pick one of the Line Rush songs first (imported songs only exist on your computer).');
       if (typeof to !== 'string' || to.length > 20) throw new HttpError(400, "That player isn't online anymore.");
       const target = await isOnline(to);
       if (!target) throw new HttpError(404, "That player isn't online anymore.");
@@ -187,7 +176,7 @@ export function versusRoutes(store, { now, limit, requireSession, HttpError }) {
       const m = await getMatch(req.body.matchId, lower);
       const i = Math.floor(Number(req.body.i));
       if (!m || !(i >= 1 && i <= REACTIONS)) throw new HttpError(400, 'Invalid reaction.');
-      if (await store.set(`rl:react:${lower}`, '1', { ex: 1, nx: true })) {
+      if (await store.set(`cooldown:react:${lower}`, '1', { ex: 1, nx: true })) {
         await push(m.al === lower ? m.bl : m.al, { type: 'react', i });
       }
       return { body: { ok: true } };

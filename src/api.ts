@@ -1,7 +1,16 @@
-// Client for the account API (/api/*). The session lives in an HttpOnly cookie the page can't read;
-// every request carries the X-LineRush header, which the server requires as a CSRF guard.
+// Client for the Line Rush server (/api/*): accounts + saves, leaderboards / King of the Hill / live
+// feed, and 1v1. The session lives in an HttpOnly cookie the page can't read; every request carries
+// the X-LineRush header, which the server requires as a CSRF guard.
 
 export interface User { username: string; createdAt: number }
+
+export interface BoardEntry { rank: number; name: string; title: string; score: number }
+export interface Board { entries: BoardEntry[]; mine: { score: number; rank: number } | null; week?: number; ends?: number }
+export interface FeedItem { kind: 'top' | 'ss' | 'fc' | 'clear' | 'king'; user: string; song: string; diff: string; at: number }
+export interface SubmitResult {
+  chart: { improved: boolean; tookTop: boolean; rank: number | null; best: number };
+  weekly: { improved: boolean; tookTop: boolean; rank: number | null; best: number } | null;
+}
 
 export interface VsResult { outcome: 'win' | 'lose' | 'draw'; reason: 'done' | 'forfeit' | 'timeout'; you: number; them: number }
 export interface VsMatch {
@@ -44,6 +53,12 @@ export const api = {
   deleteAccount: (password: string) => call<{ ok: true }>('POST', 'auth/delete', { password }),
   loadSave: () => call<{ data: unknown; updatedAt: number | null }>('GET', 'save'),
   putSave: (data: unknown) => call<{ ok: true; updatedAt: number }>('PUT', 'save', { data }),
+  // leaderboards, King of the Hill, live feed
+  submitScore: (run: { songId: string; diff: string; score: number; grade: string; fc: boolean; title: string; weekly?: number; style: string; rate: number }) =>
+    call<SubmitResult>('POST', 'scores/submit', run),
+  board: (songId: string, diff: string) => call<Board>('GET', `scores/board?${new URLSearchParams({ songId, diff })}`),
+  weeklyBoard: () => call<Board>('GET', 'scores/board?weekly=1'),
+  feed: () => call<{ items: FeedItem[] }>('GET', 'scores/feed'),
   // 1v1
   vsPoll: (query: { lobby?: boolean; match?: string }) => {
     const q = new URLSearchParams();
