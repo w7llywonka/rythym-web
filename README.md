@@ -146,15 +146,17 @@ The import beatmapper:
 
 - **Beat tracking** (dynamic programming over the onset signal) follows the song's real beats, including tempo drift, instead of assuming one perfect tempo. Tempo is chosen from several candidates by how well each one's 16th grid explains the onsets, so half / double time and triplet hi-hats don't fool it. Fast breakbeat, DnB and hardcore that fit the half tempo just as well are caught too (strong off-beats and busy 16ths mean it's really double), so a 170 BPM jungle track isn't charted as an 85 BPM Easy song.
 - **Onsets** are picked per band (kick, body, presence, air) and each lands on exactly one 16th step. Only clear hits become lines.
+- **Vocals** get their own layer. Lead vocals sit in the centre of a stereo mix and don't repeat bar for bar the way the backing does, so the beatmapper takes the centre of the mix (120 Hz–4 kHz), removes what repeats every bar (REPET on the beat grid: loops, drum patterns, chord cycles) and what's percussive (median filtering), then finds where sung syllables and notes start (SuperFlux, so vibrato isn't a new note). Each one gets a pitch and how long it's held.
+- **Harder charts follow the voice more.** Easy and Hard stay mostly on the beat. From Expert up, clear sung syllables win over hi-hats, and on Extreme and Insane hi-hat-only steps give way to the voice while it's singing. Sung lines move with the melody (pitch going up → Button 2, down → Button 1, a repeated note stays put), and long sung notes become holds.
 - **Holds** come from sounds that actually ring out (808s, sung or synth notes), followed by pitch so drums on top don't cut them off.
 - **Density follows the song's energy** (drops are busier than breakdowns), and **repeating bars get repeating patterns**, like a hand-made chart.
 - The whole song is charted, and it lands in a tier by its tempo.
 
-On real songs this puts roughly 85–90% of lines exactly on a real onset (within 30 ms). See [MUSIC-LICENSE.md](MUSIC-LICENSE.md).
+On real songs this puts roughly 85–90% of lines exactly on a real onset (within 30 ms). For vocals it was measured on a cappellas mixed over beats (where every syllable's real time is known). Compared with charting from the drum bands alone, Extreme charts land on about twice as many sung syllables beyond chance, and on more real drum hits too. Imports from before the vocal layer are charted again automatically, in the background between songs. See [MUSIC-LICENSE.md](MUSIC-LICENSE.md).
 
 Charts are generated from each song's measured low/mid/high onsets on a 16th-note grid:
 
-- kick-heavy hits go to Button 1, snare and hat hits go to Button 2
+- kick-heavy hits go to Button 1, snare and hat hits go to Button 2 (sung lines follow their melody)
 - note density is tuned per tier
 - strong hits become chords or hold notes
 

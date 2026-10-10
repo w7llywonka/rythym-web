@@ -267,6 +267,34 @@ async function restoreImports() {
   setTracks([...S.tracks.filter(t => !restored.some(r => r.id === t.id)), ...restored]);
   for (const tab of TAB_ORDER) S.selectedSong[tab] ??= songsFor(tab)[0];
   if (S.screen === 'select') buildList();
+  void upgradeImports();
+}
+
+/**
+ * Imports charted before the beatmapper followed vocals are charted again (same tempo), one at a
+ * time in the background, never during a song. Their scores stay unless they land in another tier.
+ */
+async function upgradeImports() {
+  let upgraded = 0;
+  for (const old of S.tracks.filter(t => t.custom && !t.song.analysis.vocal)) {
+    while (S.screen === 'game' || retiming) await new Promise(r => setTimeout(r, 3000));
+    if (S.tracksById.get(old.id) !== old) continue; // removed or charted again meanwhile
+    try {
+      const song = await retimeImport(old.song, await audio.load(old.song), old.bpm);
+      const next = trackFromImport(song);
+      if (!next.charts[next.difficulty] || S.tracksById.get(old.id) !== old) continue;
+      try { await updateImportSong(song); } catch { /* upgraded until the tab is closed */ }
+      if (next.difficulty !== old.difficulty) {
+        S.data = dropImportProgress(S.data, old.id);
+        queueSave();
+      }
+      setTracks(S.tracks.map(x => (x === old ? next : x)));
+      for (const tab of TAB_ORDER) if (S.selectedSong[tab] === old) S.selectedSong[tab] = tab === next.difficulty || tab === 'Recent' ? next : undefined;
+      if (S.screen === 'select') buildList();
+      upgraded++;
+    } catch { /* its audio is unreadable: it keeps its old chart */ }
+  }
+  if (upgraded) showToast(`${upgraded} imported song${upgraded === 1 ? '' : 's'} charted again to follow the vocals`);
 }
 
 /** chart the selected import again at half or double its tempo (some songs can be counted either way) */

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { analyzeSamples, importSong } from '../src/custom.ts';
-import { trackFromImport } from '../src/tracks.ts';
+import { trackFromImport, trackFromSong } from '../src/tracks.ts';
 import { songs } from '../src/songs.ts';
 
 function fixture(bpm = 174, duration = 14): Float32Array {
@@ -196,4 +196,116 @@ test('imports repeat their patterns when the music repeats', async () => {
   const patterns = [...bars].sort((x, y) => x[0] - y[0]).slice(1, -1).map(([, p]) => p);
   const most = Math.max(...[...new Set(patterns)].map(p => patterns.filter(q => q === p).length));
   assert.ok(most >= patterns.length * 0.7, `${new Set(patterns).size} different patterns over ${patterns.length} bars`);
+});
+
+// ---- the vocal layer ----------------------------------------------------------------------------
+/** a sung line: notes with harmonics, two formants and vibrato, in a rhythm that doesn't repeat each bar */
+function voice(opts: { bpm: number; duration: number; from: number; seed?: number }) {
+  let seed = opts.seed ?? 11;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296;
+  const out = new Float32Array(Math.round(opts.duration * RATE));
+  const step = 60 / opts.bpm / 4;
+  const scale = [57, 59, 60, 62, 64, 65, 67, 69, 71, 72];
+  const notes: { t: number; midi: number }[] = [];
+  let s = Math.round((opts.from - 0.8) / step), deg = 4;
+  while (0.8 + s * step < opts.duration - 1.5) {
+    const len = [2, 3, 4, 6][Math.floor(rnd() * 4)];
+    deg = Math.min(scale.length - 1, Math.max(0, deg + [-2, -1, 1, 2][Math.floor(rnd() * 4)]));
+    const t = 0.8 + s * step, midi = scale[deg];
+    notes.push({ t, midi });
+    const f0 = 440 * 2 ** ((midi - 69) / 12), dur = len * step * 0.9;
+    let phase = 0;
+    for (let k = 0, start = Math.round(t * RATE); k < dur * RATE && start + k < out.length; k++) {
+      const x = k / RATE;
+      const vib = x > 0.15 ? 2 ** (0.25 * Math.sin(2 * Math.PI * 5.5 * x) / 12) : 1;
+      phase += 2 * Math.PI * f0 * vib / RATE;
+      const env = Math.min(1, x / 0.015) * (0.75 + 0.25 * Math.exp(-x / 0.08)) * Math.min(1, (dur - x) / 0.03);
+      let v = 0;
+      for (let h = 1; h <= 14; h++) {
+        const hz = h * f0;
+        if (hz > 5000) break;
+        const formant = 1 + 3 * Math.exp(-(((hz - 700) / 250) ** 2)) + 2 * Math.exp(-(((hz - 2600) / 400) ** 2));
+        v += Math.sin(h * phase) * formant / h;
+      }
+      out[start + k] += v * env * 0.12;
+    }
+    s += len + (rnd() < 0.3 ? 1 : 0); // a rest now and then, so bars differ
+  }
+  return { out, notes };
+}
+
+test('the vocal layer finds sung notes over a beat, with their pitch, and not the drums', async () => {
+  const bpm = 100, duration = 48;
+  const beat = drums({ bpm0: bpm, duration, pattern: 'hiphop' });
+  const sung = voice({ bpm, duration, from: 0.8 + 4 * 2.4 });
+  const mix = beat.out.map((v, i) => v + sung.out[i]);
+  const a = (await analyzeSamples(mix, RATE)).analysis;
+  assert.ok(a.vocal && a.pitch, 'vocal layer stored');
+  assert.equal(a.vocal.length, a.low.length);
+  const at = (t: number) => nearestIndex(a.grid!, t);
+  const found = sung.notes.filter(n => +a.vocal![at(n.t)] >= 5);
+  assert.ok(found.length >= sung.notes.length * 0.6, `${found.length} of ${sung.notes.length} sung notes found`);
+  // the first four bars are drums only: nothing strong there
+  const intro = [...a.vocal.slice(0, at(sung.notes[0].t) - 2)].filter(d => +d >= 5).length;
+  assert.ok(intro <= 2, `${intro} strong vocal steps in the drum intro`);
+  // pitch: right note (or octave) for most found notes
+  const pitched = found.filter(n => {
+    const code = a.pitch!.charCodeAt(at(n.t));
+    return code >= 64 && (code - 64 + 40 - n.midi) % 12 === 0;
+  });
+  assert.ok(pitched.length >= found.length * 0.6, `${pitched.length} of ${found.length} found notes pitched right`);
+});
+
+test('Extreme charts of a sung song follow the voice, moving with the melody', async () => {
+  const bpm = 100, duration = 48;
+  const beat = drums({ bpm0: bpm, duration, pattern: 'hiphop' });
+  const sung = voice({ bpm, duration, from: 0.8 + 4 * 2.4, seed: 5 });
+  const mix = beat.out.map((v, i) => v + sung.out[i]);
+  const song = { ...songs[0], id: 'custom-sung', duration, analysis: (await analyzeSamples(mix, RATE)).analysis };
+  const t = trackFromSong({ ...song, difficulty: 'Extreme' }, { difficulty: 'Extreme', custom: true });
+  const notes = t.charts.Extreme!.notes;
+  const onNote = (time: number) => notes.find(n => Math.abs(n.time - time) < 0.03);
+  const charted = sung.notes.filter(n => onNote(n.t));
+  assert.ok(charted.length >= sung.notes.length * 0.6, `${charted.length} of ${sung.notes.length} sung notes charted`);
+  // consecutive charted sung notes: up the scale -> Button 2, down -> Button 1
+  let agree = 0, moves = 0;
+  for (let i = 1; i < sung.notes.length; i++) {
+    const prev = sung.notes[i - 1], cur = sung.notes[i];
+    const n = onNote(cur.t);
+    if (!n || n.chord || !onNote(prev.t) || cur.midi === prev.midi) continue;
+    moves++;
+    if (n.lane === (cur.midi > prev.midi ? 2 : 1)) agree++;
+  }
+  assert.ok(moves >= 10 && agree >= moves * 0.65, `${agree} of ${moves} melody moves on the matching button`);
+});
+
+test('the vocal layer favours the centre: a hard-panned line is not the voice', async () => {
+  const bpm = 100, duration = 48;
+  const beat = drums({ bpm0: bpm, duration, pattern: 'hiphop' });
+  const centre = voice({ bpm, duration, from: 0.8 + 4 * 2.4, seed: 3 });
+  const left = voice({ bpm, duration, from: 0.8 + 4 * 2.4, seed: 99 });
+  // drums and voice in the middle, the other line only in the left channel
+  const L = beat.out.map((v, i) => v + centre.out[i] + left.out[i]), R = beat.out.map((v, i) => v + centre.out[i]);
+  const mono = L.map((v, i) => (v + R[i]) / 2), side = L.map((v, i) => (v - R[i]) / 2);
+  const a = (await analyzeSamples(mono, RATE, undefined, { side })).analysis;
+  const strong = (ts: { t: number }[]) => ts.filter(n => +a.vocal![nearestIndex(a.grid!, n.t)] >= 5).length / ts.length;
+  const leftOnly = left.notes.filter(n => !centre.notes.some(c => Math.abs(c.t - n.t) < 0.2));
+  assert.ok(strong(centre.notes) >= 0.5, `centre voice: ${strong(centre.notes)}`);
+  assert.ok(strong(leftOnly) <= strong(centre.notes) / 2, `panned line: ${strong(leftOnly)} vs centre ${strong(centre.notes)}`);
+});
+
+test('stereo imports give the vocal layer both channels', async () => {
+  const bpm = 100, duration = 30;
+  const beat = drums({ bpm0: bpm, duration, pattern: 'hiphop' });
+  const sung = voice({ bpm, duration, from: 0.8 + 4 * 2.4 });
+  const left = beat.out.map((v, i) => v + sung.out[i]), right = Float32Array.from(left);
+  const buffer = {
+    duration, sampleRate: RATE, numberOfChannels: 2,
+    getChannelData: (c: number) => (c === 0 ? left : right),
+  } as unknown as AudioBuffer;
+  const context = { async decodeAudioData() { return buffer; } } as unknown as AudioContext;
+  const imported = await importSong(new File(['stereo bytes'], 'Sung.wav', { type: 'audio/wav' }), context);
+  const a = imported.song.analysis;
+  assert.ok(a.vocal && [...a.vocal].some(d => +d >= 5), 'the centred voice is found');
+  assert.equal(a.pitch?.length, a.low.length);
 });
