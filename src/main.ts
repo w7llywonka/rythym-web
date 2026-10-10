@@ -1,4 +1,4 @@
-// LINE RUSH (web). Screens: Home -> Select -> Game -> Results, plus the Pause / Settings / Customize /
+// LINE RUSH (web, and the desktop app in desktop/). Screens: Home -> Select -> Game -> Results, plus the Pause / Settings / Customize /
 // Style / Calibrate / Leaderboard / Profile / 1v1 / Account panels. Each lives in src/app/.
 import './style.css';
 import { initAccounts, restoreSession } from './app/accounts.ts';
@@ -6,6 +6,7 @@ import { initBoard } from './app/board.ts';
 import { initCalibration } from './app/calibration.ts';
 import { initCredits } from './app/credits.ts';
 import { initCustomize } from './app/customize.ts';
+import { initDesktop } from './app/desktop.ts';
 import { initHome } from './app/home.ts';
 import { initKeyboard } from './app/keyboard.ts';
 import { startLoop } from './app/loop.ts';
@@ -42,6 +43,7 @@ initHome();
 initCredits();
 initKeyboard();
 initPreview();
+initDesktop();
 
 showScreen('home');
 setTab('Easy', true);

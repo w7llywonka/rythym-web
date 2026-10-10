@@ -10,7 +10,9 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "charts": "node --experimental-strip-types scripts/chart-objects.ts",
-    "tracks": "node --experimental-strip-types scripts/add-tracks.ts"
+    "tracks": "node --experimental-strip-types scripts/add-tracks.ts",
+    "app": "npm run build && npm --prefix desktop start",
+    "app:dist": "npm run build && npm --prefix desktop run dist"
   },
   "devDependencies": {
     "@breezystack/lamejs": "^1.2.7",

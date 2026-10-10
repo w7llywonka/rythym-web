@@ -230,7 +230,7 @@ export function playSelected() {
 }
 
 // ---- importing your own song ---------------------------------------------------------------
-async function importFile(file: File) {
+export async function importFile(file: File) {
   try {
     const ctx = await audio.unlock();
     const imported = await importSong(file, ctx, text => showToast(text));

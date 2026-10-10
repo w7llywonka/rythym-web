@@ -1,0 +1,71 @@
+# Builds the Line Rush app for Windows, macOS and Linux.
+# - Push a tag like v1.0.1 (matching desktop/package.json "version") to publish the installers to a
+#   GitHub Release; installed apps update themselves from there.
+# - Run it by hand (Actions -> Desktop app -> Run workflow) to just get the installers as artifacts.
+# Optional repository variables (Settings -> Secrets and variables -> Actions -> Variables):
+#   LINE_RUSH_SERVER  the online server the app uses (e.g. https://your-game.up.railway.app)
+#   DISCORD_CLIENT_ID a Discord application ID, for "Playing Line Rush" status on Discord
+name: Desktop app
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+
+      - name: Build the game
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: App settings for this build
+        shell: bash
+        env:
+          LINE_RUSH_SERVER: ${{ vars.LINE_RUSH_SERVER }}
+          DISCORD_CLIENT_ID: ${{ vars.DISCORD_CLIENT_ID }}
+        run: |
+          node -e "
+            const fs = require('fs'), p = 'desktop/app-config.json', c = JSON.parse(fs.readFileSync(p, 'utf8'));
+            if (process.env.LINE_RUSH_SERVER) c.server = process.env.LINE_RUSH_SERVER;
+            if (process.env.DISCORD_CLIENT_ID) c.discordClientId = process.env.DISCORD_CLIENT_ID;
+            fs.writeFileSync(p, JSON.stringify(c, null, 2));
+          "
+
+      - name: Package
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm ci
+          npm run ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || 'dist' }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: line-rush-${{ matrix.os }}
+          path: |
+            desktop/release/*.exe
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/*.AppImage
+            desktop/release/*.deb
+          if-no-files-found: ignore

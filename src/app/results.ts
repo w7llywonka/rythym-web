@@ -76,6 +76,7 @@ async function showResults(r: Run, cleared: boolean) {
   const t = r.track;
   const acc = game.accuracyOf(r);
   const grade = gradeFor(acc, cleared, r.counts);
+  S.lastResult = { title: t.title, diff: r.chartDiff, grade, accuracy: acc };
   const fc = cleared && r.counts[3] === 0;
   const key = bestKey(t, r.chartDiff);
   const ranked = !r.unranked;
