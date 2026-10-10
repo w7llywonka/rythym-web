@@ -107,6 +107,33 @@ npm test        # charts, scoring, saves, imports and the account server
 npm run build
 ```
 
+## Desktop app
+
+Line Rush also comes as an app for **Windows, macOS and Linux** (`desktop/`, Electron). It's the same game and the same accounts, plus:
+
+- **Fullscreen** with F11 or Alt+Enter, where Escape still pauses (in a browser, Escape kicks you out of fullscreen)
+- **Unlocked frame rate**: turns off V-Sync for less lag between your key press and the screen
+- **Discord status**: shows the song, tier and time left on your Discord profile
+- **Songs folder** (`Documents/Line Rush/Songs`): drop audio files in and they're imported when you open song select
+- **Screenshots** with F12 (saved to `Pictures/Line Rush`)
+- starts instantly and **plays offline** (the game and songs are inside the app), and the menu music starts without a click
+- your save is written before the window closes, the screen doesn't sleep during a song, and the game keeps running in the background (1v1)
+- your login is kept by the app and encrypted with the system keychain; the game page itself never sees it
+- **automatic updates** from GitHub Releases (Windows and Linux; macOS shows a download link)
+
+Everything app-only is under **APP** on the home screen. On the website that button is **GET THE APP**.
+
+```sh
+npm run app        # build the game and open it in the app (first: npm --prefix desktop install)
+npm run app:dist   # make an installer for this computer in desktop/release/
+```
+
+**Releases:** `.github/workflows/desktop.yml` builds the Windows installer, the macOS dmg and the Linux AppImage / deb. Bump `version` in `desktop/package.json`, then push a matching tag (`git tag v1.0.1 && git push --tags`), and the installers are published to a GitHub Release that installed apps update from. Run the workflow by hand to just get the installers as downloads. macOS builds aren't code-signed, so the first launch needs right-click → Open.
+
+**Settings for a build** (repository variables, or `desktop/app-config.json`):
+- `LINE_RUSH_SERVER`: the address of your online server (e.g. your Railway domain). Without it the app plays offline as a guest; players can also enter a server under APP.
+- `DISCORD_CLIENT_ID`: create an application at discord.com/developers (name it "Line Rush", and add the icon as a Rich Presence art asset called `logo`), then put its Application ID here.
+
 ## Songs
 
 - **Ten originals** (five Easy, five Hard): synthesized locally with Web Audio, CC0.
@@ -149,6 +176,7 @@ Timing runs on the Web Audio clock (`AudioContext.currentTime`) with latency com
 - `server.js`: Node server for Railway (static files with compression + the API); `api/index.js`: the same API as a Vercel function
 - `scripts/`: music generation, analysis, `add-tracks.ts` (licensed tracks) and `chart-objects.ts`
 - `src/app/importStore.ts`: imported songs kept on this computer (IndexedDB)
+- `desktop/`: the app (Electron): `main.js` (window, keys, IPC, updates), `protocol.js` (serves the game at app://line-rush), `api-proxy.js` (server + login cookie), `discord.js`, `songs-folder.js`, `prefs.js`; `src/app/desktop.ts` is its side in the game
 - `tests/`
 
 Code is MIT licensed. The original music recipes and generated audio are dedicated to CC0; the licensed tracks keep their own licenses (see MUSIC-LICENSE.md).

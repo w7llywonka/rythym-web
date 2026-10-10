@@ -1,0 +1,94 @@
+{
+  "name": "line-rush-desktop",
+  "productName": "Line Rush",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Two buttons. Real beats. Don't miss. A two-lane rhythm game.",
+  "author": "Line Rush",
+  "homepage": "https://github.com/w7llywonka/rythym-web",
+  "license": "MIT",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "node copy-web.js && electron .",
+    "dist": "node copy-web.js && electron-builder --publish never",
+    "release": "node copy-web.js && electron-builder --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.linerush.game",
+    "productName": "Line Rush",
+    "copyright": "Line Rush",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "*.js",
+      "preload.cjs",
+      "app-config.json",
+      "build/icon.png",
+      "web/**/*",
+      "package.json"
+    ],
+    "artifactName": "Line-Rush-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Line-Rush-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.music-games"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Game",
+      "maintainer": "Line Rush",
+      "synopsis": "Two-lane rhythm game",
+      "syncDesktopName": true
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "w7llywonka",
+        "repo": "rythym-web",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "desktopName": "line-rush.desktop"
+}

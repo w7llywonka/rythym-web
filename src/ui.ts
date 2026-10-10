@@ -137,6 +137,8 @@ export function buildUI(app: HTMLElement) {
   button(home, 'settings', { text: 'SETTINGS', size: 13, ax: 0.5, x: [0.5, 0], y: 426, w: 300, h: 50, r: 14 });
   label(home, 'howto', { html: '', font: 'med', size: 14, color: T.muted, align: 'center', wrap: true, ax: 0.5, x: [0.5, 0], y: 492, w: 340, h: 40 });
   button(home, 'credits', { text: 'CREDITS', size: 10, ax: 1, ay: 1, x: [1, -30], y: [1, -14], w: 84, h: 28, r: 8 });
+  // the desktop app's panel (APP), or a download link on the website (GET THE APP)
+  button(home, 'app', { text: 'GET THE APP', size: 10, ay: 1, x: 30, y: [1, -14], w: 110, h: 28, r: 8, hidden: true });
   label(home, 'nowplaying', { html: '', font: 'med', size: 14, color: T.dim, align: 'center', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -18], w: 800, h: 20 });
   const chip = frame(home, 'chip', { x: 30, y: 24, w: 300, h: 64, r: 14 });
   label(chip, 'name', { text: 'Player', font: 'black', size: 16, truncate: true, x: 14, y: 8, w: 180, h: 20 });
@@ -533,6 +535,7 @@ export function buildUI(app: HTMLElement) {
 
   // account (login / sign up / manage)
   buildAccountPanels(overlay, app);
+  buildAppPanel(overlay);
 
   label(overlay, 'toast', { text: '', size: 15, align: 'center', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -24], w: 500, h: 40, bg: T.bg3, bgT: 0.05, r: 20, hidden: true, cls: 'toast' });
   frame(app, 'fader', { cls: 'fill fader nopointer', bg: '#000000' });
@@ -586,6 +589,40 @@ function buildAccountPanels(overlay: HTMLElement, _app: HTMLElement) {
   button(acct, 'logout', { text: 'LOG OUT', size: 15, x: 32, y: 420, w: 220, h: 48 });
   button(acct, 'logoutall', { text: 'LOG OUT EVERYWHERE', size: 12, x: 268, y: 420, w: 220, h: 48 });
   button(acct, 'delete', { text: 'DELETE ACCOUNT', size: 12, x: 32, y: 482, w: 456, h: 44, color: T.red, bg: T.bg1, stroke: T.line });
+}
+
+/** the desktop app's own settings: fullscreen, frame rate, Discord, server, Songs folder, updates */
+function buildAppPanel(overlay: HTMLElement) {
+  const ap = panel(overlay, 'app', 580, 600);
+  label(ap, 'title', { text: 'App', font: 'black', size: 26, x: 32, y: 26, w: 300, h: 36 });
+  label(ap, 'sub', { text: 'Extras you only get in the Line Rush app.', font: 'med', size: 13, color: T.muted, x: 32, y: 62, w: 480, h: 18 });
+  const header = (name: string, text: string, y: number) =>
+    label(ap, name, { text, font: 'black', size: 10, color: T.muted, x: 32, y, w: 300, h: 14 });
+  const row = (name: string, y: number, text: string, hint: string, withToggle = true) => {
+    const r = frame(ap, name, { x: 32, y, w: 516, h: 60, bg: T.bg2, r: 12 });
+    label(r, 'label', { text, size: 16, x: 18, y: 10, w: 400, h: 20 });
+    label(r, 'hint', { text: hint, font: 'med', size: 12, color: T.muted, x: 18, y: 32, w: 420, h: 16 });
+    if (withToggle) toggle(r, 52, 28);
+    return r;
+  };
+  header('h1', 'DISPLAY', 96);
+  row('fullscreen', 116, 'Fullscreen', 'F11 or Alt+Enter. Escape still pauses the song.');
+  row('fps', 184, 'Unlocked frame rate', 'Turns off V-Sync for less input lag. Restarts the app.');
+  header('h2', 'ONLINE', 260);
+  row('discord', 280, 'Discord status', "Shows the song you're playing on your Discord profile.");
+  const server = frame(ap, 'server', { x: 32, y: 348, w: 516, h: 52, bg: T.bg2, r: 12 });
+  const input = node(server, 'input', { tag: 'input', x: 6, y: 6, w: 400, h: 40, bg: T.bg1, r: 9, cls: 'input' }) as HTMLInputElement;
+  input.placeholder = 'Server address (https://...)';
+  input.spellcheck = false;
+  input.maxLength = 200;
+  button(server, 'save', { text: 'SAVE', size: 13, ax: 1, x: [1, -6], y: 6, w: 98, h: 40, r: 9, bg: T.bg1 });
+  label(ap, 'servermsg', { text: '', font: 'med', size: 12, color: T.muted, x: 34, y: 406, w: 512, h: 16, truncate: true });
+  header('h3', 'SONGS & SCREENSHOTS', 438);
+  button(ap, 'songs', { text: 'OPEN SONGS FOLDER', size: 13, x: 32, y: 458, w: 252, h: 46 });
+  button(ap, 'shots', { text: 'SCREENSHOTS  (F12)', size: 13, x: 296, y: 458, w: 252, h: 46 });
+  label(ap, 'songsnote', { text: 'Audio files you put in the Songs folder are added when you open song select.', font: 'med', size: 12, color: T.muted, wrap: true, x: 32, y: 512, w: 516, h: 18 });
+  label(ap, 'version', { text: '', font: 'med', size: 12, color: T.dim, x: 32, y: 556, w: 300, h: 20 });
+  button(ap, 'update', { text: 'RESTART TO UPDATE', size: 12, ax: 1, x: 548, y: 548, w: 200, h: 36, r: 10, hidden: true }, 'primary');
 }
 
 /** Scales the 1100x640 stages to fit the window (same rule as the Roblox UIScale). */
