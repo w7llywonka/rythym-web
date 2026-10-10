@@ -16,6 +16,8 @@ export type NoteStyle = 'Glow' | 'Flat' | 'Outline' | 'Classic';
 export interface Analysis {
   bpm: number; offset: number; low: string; mid: string; high: string; gridFit: number;
   grid?: number[]; downbeat?: number; sustain?: string; energy?: string;
+  /** imports: vocal / lead-melody onset strength per step (0-9), and its pitch ('@' + MIDI - 40, '.' = none) */
+  vocal?: string; pitch?: string;
   /** beat boundaries the grid is built from (stored instead of the grid for bundled tracks) */
   beats?: number[];
 }
@@ -54,7 +56,7 @@ export interface Track {
   id: string; title: string; artist: string; genre: string; seed: number; difficulty: Tier;
   bpm: number; displayBpm: number; offset: number; length: number; displayLength: number; previewStart: number;
   color1: string; color2: string; low: string; mid: string; high: string;
-  grid?: number[]; downbeat?: number; sustain?: string; energy?: string;
+  grid?: number[]; downbeat?: number; sustain?: string; energy?: string; vocal?: string; pitch?: string;
   chartStart?: number; chartEnd?: number; custom?: boolean; weeklyFrom?: number;
   song: Song; charts: Partial<Record<Diff, Chart>>; chartList: Diff[]; level: number;
 }

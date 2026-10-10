@@ -107,6 +107,33 @@ npm test        # charts, scoring, saves, imports and the account server
 npm run build
 ```
 
+## Desktop app
+
+Line Rush also comes as an app for **Windows, macOS and Linux** (`desktop/`, Electron). It's the same game and the same accounts, plus:
+
+- **Fullscreen** with F11 or Alt+Enter, where Escape still pauses (in a browser, Escape kicks you out of fullscreen)
+- **Unlocked frame rate**: turns off V-Sync for less lag between your key press and the screen
+- **Discord status**: shows the song, tier and time left on your Discord profile
+- **Songs folder** (`Documents/Line Rush/Songs`): drop audio files in and they're imported when you open song select
+- **Screenshots** with F12 (saved to `Pictures/Line Rush`)
+- starts instantly and **plays offline** (the game and songs are inside the app), and the menu music starts without a click
+- your save is written before the window closes, the screen doesn't sleep during a song, and the game keeps running in the background (1v1)
+- your login is kept by the app and encrypted with the system keychain; the game page itself never sees it
+- **automatic updates** from GitHub Releases (Windows and Linux; macOS shows a download link)
+
+Everything app-only is under **APP** on the home screen. On the website that button is **GET THE APP**.
+
+```sh
+npm run app        # build the game and open it in the app (first: npm --prefix desktop install)
+npm run app:dist   # make an installer for this computer in desktop/release/
+```
+
+**Releases:** `.github/workflows/desktop.yml` builds the Windows installer, the macOS dmg and the Linux AppImage / deb. Bump `version` in `desktop/package.json`, then push a matching tag (`git tag v1.0.1 && git push --tags`), and the installers are published to a GitHub Release that installed apps update from. Run the workflow by hand to just get the installers as downloads. macOS builds aren't code-signed, so the first launch needs right-click → Open.
+
+**Settings for a build** (repository variables, or `desktop/app-config.json`):
+- `LINE_RUSH_SERVER`: the address of your online server (e.g. your Railway domain). Without it the app plays offline as a guest; players can also enter a server under APP.
+- `DISCORD_CLIENT_ID`: create an application at discord.com/developers (name it "Line Rush", and add the icon as a Rich Presence art asset called `logo`), then put its Application ID here.
+
 ## Songs
 
 - **Ten originals** (five Easy, five Hard): synthesized locally with Web Audio, CC0.
@@ -119,15 +146,17 @@ The import beatmapper:
 
 - **Beat tracking** (dynamic programming over the onset signal) follows the song's real beats, including tempo drift, instead of assuming one perfect tempo. Tempo is chosen from several candidates by how well each one's 16th grid explains the onsets, so half / double time and triplet hi-hats don't fool it. Fast breakbeat, DnB and hardcore that fit the half tempo just as well are caught too (strong off-beats and busy 16ths mean it's really double), so a 170 BPM jungle track isn't charted as an 85 BPM Easy song.
 - **Onsets** are picked per band (kick, body, presence, air) and each lands on exactly one 16th step. Only clear hits become lines.
+- **Vocals** get their own layer. Lead vocals sit in the centre of a stereo mix and don't repeat bar for bar the way the backing does, so the beatmapper takes the centre of the mix (120 Hz–4 kHz), removes what repeats every bar (REPET on the beat grid: loops, drum patterns, chord cycles) and what's percussive (median filtering), then finds where sung syllables and notes start (SuperFlux, so vibrato isn't a new note). Each one gets a pitch and how long it's held.
+- **Harder charts follow the voice more.** Easy and Hard stay mostly on the beat. From Expert up, clear sung syllables win over hi-hats, and on Extreme and Insane hi-hat-only steps give way to the voice while it's singing. Sung lines move with the melody (pitch going up → Button 2, down → Button 1, a repeated note stays put), and long sung notes become holds.
 - **Holds** come from sounds that actually ring out (808s, sung or synth notes), followed by pitch so drums on top don't cut them off.
 - **Density follows the song's energy** (drops are busier than breakdowns), and **repeating bars get repeating patterns**, like a hand-made chart.
 - The whole song is charted, and it lands in a tier by its tempo.
 
-On real songs this puts roughly 85–90% of lines exactly on a real onset (within 30 ms). See [MUSIC-LICENSE.md](MUSIC-LICENSE.md).
+On real songs this puts roughly 85–90% of lines exactly on a real onset (within 30 ms). For vocals it was measured on a cappellas mixed over beats (where every syllable's real time is known). Compared with charting from the drum bands alone, Extreme charts land on about twice as many sung syllables beyond chance, and on more real drum hits too. Imports from before the vocal layer are charted again automatically, in the background between songs. See [MUSIC-LICENSE.md](MUSIC-LICENSE.md).
 
 Charts are generated from each song's measured low/mid/high onsets on a 16th-note grid:
 
-- kick-heavy hits go to Button 1, snare and hat hits go to Button 2
+- kick-heavy hits go to Button 1, snare and hat hits go to Button 2 (sung lines follow their melody)
 - note density is tuned per tier
 - strong hits become chords or hold notes
 
@@ -149,6 +178,7 @@ Timing runs on the Web Audio clock (`AudioContext.currentTime`) with latency com
 - `server.js`: Node server for Railway (static files with compression + the API); `api/index.js`: the same API as a Vercel function
 - `scripts/`: music generation, analysis, `add-tracks.ts` (licensed tracks) and `chart-objects.ts`
 - `src/app/importStore.ts`: imported songs kept on this computer (IndexedDB)
+- `desktop/`: the app (Electron): `main.js` (window, keys, IPC, updates), `protocol.js` (serves the game at app://line-rush), `api-proxy.js` (server + login cookie), `discord.js`, `songs-folder.js`, `prefs.js`; `src/app/desktop.ts` is its side in the game
 - `tests/`
 
 Code is MIT licensed. The original music recipes and generated audio are dedicated to CC0; the licensed tracks keep their own licenses (see MUSIC-LICENSE.md).

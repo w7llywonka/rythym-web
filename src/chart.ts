@@ -4,6 +4,8 @@
 // offset + i * (60 / bpm / 4) seconds into the track.
 //
 // Notes follow the music: kick-heavy hits go to Button 1, snare/hat hits go to Button 2.
+// Imports also carry a vocal layer (sung syllables / notes, with pitch): the harder the chart, the
+// more it follows the voice, and sung lines move between the buttons with the melody.
 import type { ChartNote, Diff, Lane } from './types.ts';
 
 export interface Profile {
@@ -37,12 +39,28 @@ export const HOLDS: Record<Diff, { chance: number; minLen: number; maxLen: numbe
   Insane: { chance: 0.11, minLen: 1, maxLen: 1.5, spacing: 3, overlap: true },
 };
 
+// how much a chart follows the vocal layer: vocal onsets of at least `min` count, their strength is
+// scaled by `weight`, and steps led by the voice get `bonus` in the density ranking. `hats` is taken off
+// steps that are only hi-hat within two beats of a sung syllable, so the voice leads there instead.
+// Tuned on a cappellas mixed over beats: Extreme / Insane land on twice as many sung syllables
+// (over chance) as before, and on more real drum hits too, at ~10% fewer notes (the hat filler).
+export const VOCALS: Record<Diff, { min: number; weight: number; bonus: number; hats: number }> = {
+  Easy: { min: 5, weight: 0.6, bonus: 0, hats: 0 },
+  Hard: { min: 5, weight: 0.85, bonus: 0.3, hats: 0 },
+  Expert: { min: 5, weight: 1, bonus: 0.7, hats: 0 },
+  Extreme: { min: 4, weight: 1.1, bonus: 1.1, hats: 3 },
+  Insane: { min: 4, weight: 1.15, bonus: 1.3, hats: 3 },
+};
+
+
 // each song can also be played one step harder than its own tier
 export const NEXT: Partial<Record<Diff, Diff>> = { Easy: 'Hard', Hard: 'Expert', Expert: 'Extreme', Extreme: 'Insane' };
 
 export interface ChartSource {
   seed: number; bpm: number; offset: number; low: string; mid: string; high: string;
   chartStart?: number; chartEnd?: number;
+  /** imports: vocal onset strength per step (0-9) and its pitch ('@' + MIDI - 40, '.' = none) */
+  vocal?: string; pitch?: string;
   /** beat-tracked imports: exact step times, first downbeat step, held length per step, energy per step */
   grid?: number[]; downbeat?: number; sustain?: string; energy?: string;
 }
@@ -63,6 +81,8 @@ export class Rng {
 
 interface Step {
   index: number; t: number; L: number; M: number; H: number; strength: number; score: number; allowed: boolean;
+  /** vocal strength (already weighted for this chart), its MIDI pitch (0 = none), and whether the voice leads this step */
+  V: number; pitch: number; vocal: boolean;
   /** position in the bar: 0 = downbeat, multiples of 4 = beats, even = 8ths, odd = 16ths */
   pos: number; held: number;
 }
@@ -72,7 +92,7 @@ const digit = (s: string, i: number) => {
   return Number.isNaN(code) ? 0 : code - 48;
 };
 
-function buildSteps(song: ChartSource, profile: Profile): Step[] {
+function buildSteps(song: ChartSource, profile: Profile, vocals = VOCALS.Hard): Step[] {
   const s16 = 60 / song.bpm / 4;
   // tiny tie-breaker so equally strong steps don't all make the cut or all miss it together:
   // fuller hits (more bands active) first, then a seeded jitter
@@ -82,7 +102,14 @@ function buildSteps(song: ChartSource, profile: Profile): Step[] {
   const down = song.downbeat ?? 0;
   for (let j = 0; j < n; j++) {
     const L = digit(song.low, j), M = digit(song.mid, j), H = digit(song.high, j);
-    const strength = Math.max(L, M, H * 0.8);
+    // only clear vocal onsets count (measured: weaker ones are barely more often a real syllable than chance)
+    const rawV = song.vocal ? digit(song.vocal, j) : 0;
+    const V = rawV >= vocals.min ? rawV * vocals.weight : 0;
+    const beatStrength = Math.max(L, M, H * 0.8);
+    const strength = Math.max(beatStrength, V);
+    const vocal = V > 0 && V >= beatStrength - 0.5;
+    const code = song.pitch ? song.pitch.charCodeAt(j) : NaN;
+    const pitch = code >= 64 ? code - 64 + 40 : 0;
     const pos = (((j - down) % 16) + 16) % 16;
     let bonus = 0, allowed = true;
     if (pos % 4 === 0) bonus = profile.beatBonus + (pos === 0 && song.grid ? 0.3 : 0);
@@ -93,15 +120,28 @@ function buildSteps(song: ChartSource, profile: Profile): Step[] {
     const held = song.sustain ? parseInt(song.sustain[j] ?? '0', 36) || 0 : 0;
     steps.push({
       index: j, t: song.grid ? song.grid[j] : song.offset + j * s16, L, M, H, strength,
-      score: strength + bonus + energy + ((L + M + H) / 27) * 0.04 + tie.next() * 0.01, allowed, pos, held,
+      score: strength + bonus + energy + (vocal ? vocals.bonus : 0) + ((L + M + H) / 27) * 0.04 + tie.next() * 0.01, allowed, pos, held,
+      V, pitch, vocal,
     });
+  }
+  // inside sung phrases, steps that are only hi-hat give way to the voice
+  if (vocals.hats && song.vocal) {
+    for (let i = 0; i < n; i++) {
+      const st = steps[i];
+      if (st.vocal || st.L >= 4 || st.M >= 4) continue;
+      let near = false;
+      for (let d = -8; d <= 8 && !near; d++) near = !!steps[i + d]?.vocal;
+      if (near) st.score -= vocals.hats;
+    }
   }
   // off-beat 16ths only count when they're a clear peak of their own
   for (let i = 0; i < n; i++) {
     const st = steps[i];
     if (st.pos % 2 === 1 && st.allowed && !profile.loose16) {
       const prev = steps[i - 1], next = steps[i + 1];
-      if ((prev && prev.strength >= st.strength) || (next && next.strength >= st.strength)) st.allowed = false;
+      // a sung syllable counts against the voice around it, not the drums
+      const own = (x: Step) => (st.vocal ? x.V : x.strength);
+      if ((prev && own(prev) >= own(st)) || (next && own(next) >= own(st))) st.allowed = false;
     }
   }
   return steps;
@@ -143,7 +183,7 @@ export function generateChart(song: ChartSource, difficulty: Diff): ChartNote[] 
   // that fast songs chart fast, while most lines still land on a real onset)
   if (song.grid) profile = { ...profile, minStrength: RECORDING_FLOOR[difficulty], oddPenalty: 0 };
   const rng = new Rng(song.seed % 2147483647);
-  let steps = buildSteps(song, profile);
+  let steps = buildSteps(song, profile, VOCALS[difficulty]);
 
   // optional section of the track to chart (used to cut full songs down to short runs)
   if (song.chartStart !== undefined || song.chartEnd !== undefined) {
@@ -176,18 +216,22 @@ export function generateChart(song: ChartSource, difficulty: Diff): ChartNote[] 
   let notes: ChartNote[] = [];
   const stepOf = new Map<ChartNote, Step>();
   let prevLane = 0, run = 0, prevT = -Infinity, lastChordT = -Infinity;
+  let lastPitch = 0, lastVocalLane: Lane = 1;
   for (const st of chosen) {
     const gap = st.t - prevT;
     const top = Math.max(st.M, st.H);
     let lane: Lane;
-    if (st.L >= top + 2) lane = 1;
+    if (st.vocal && st.pitch && lastPitch) {
+      // sung lines follow the melody: up goes right (Button 2), down goes left, a held note repeats
+      lane = st.pitch > lastPitch ? 2 : st.pitch < lastPitch ? 1 : lastVocalLane;
+    } else if (st.L >= top + 2) lane = 1;
     else if (top >= st.L + 2) lane = 2;
     else lane = rng.int(1, 2) as Lane;
     // keep fast passages flowing instead of long one-lane jacks
     if (lane === prevLane && (run >= profile.maxRun || gap < (profile.alternateBelow ?? 0.14))) lane = (3 - lane) as Lane;
 
     const chordAt = profile.chordThreshold ?? 7;
-    const isChord = profile.chordGap !== undefined
+    const isChord = profile.chordGap !== undefined && !st.vocal
       && (st.pos % 4 === 0 || (!!profile.offbeatChords && st.pos % 2 === 0))
       && st.L >= chordAt && top >= chordAt
       && gap >= (profile.offbeatChords ? 0.12 : 0.2)
@@ -206,6 +250,7 @@ export function generateChart(song: ChartSource, difficulty: Diff): ChartNote[] 
       stepOf.set(note, st);
       run = lane === prevLane ? run + 1 : 1;
       prevLane = lane;
+      if (st.vocal) { lastVocalLane = lane; if (st.pitch) lastPitch = st.pitch; }
     }
     prevT = st.t;
   }
@@ -227,7 +272,7 @@ export function generateChart(song: ChartSource, difficulty: Diff): ChartNote[] 
       const sig = list.map(note => {
         const st = stepOf.get(note)!;
         const top = Math.max(st.M, st.H);
-        const voice = note.chord ? 'C' : st.L >= top + 2 ? 'K' : top >= st.L + 2 ? 'S' : 'X';
+        const voice = note.chord ? 'C' : st.vocal ? 'V' : st.L >= top + 2 ? 'K' : top >= st.L + 2 ? 'S' : 'X';
         return `${st.pos}${voice}`;
       }).join(',');
       const lanes = seen.get(sig);

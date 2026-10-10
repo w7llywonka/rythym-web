@@ -30,6 +30,8 @@ export const S = {
   selectedSong: {} as Partial<Record<Tab, Track>>,
   selectedChart: new Map<Track, Diff>(),
   previewTrack: null as Track | null,
+  /** the last finished run, for the app's Discord status on the results screen */
+  lastResult: null as { title: string; diff: Diff; grade: string; accuracy: number } | null,
   /** what RETRY replays */
   last: { song: null as Track | null, chart: null as Diff | null, opts: undefined as RunOpts | undefined },
 };
