@@ -10,10 +10,23 @@ const ONSET_SHIFT = 0.003; // calibrated against synthetic hits at known times (
 const BAND_EDGES = [30, 160, 1200, 5000, 11025]; // kick | body | presence | air
 const SUSTAIN_DROP = Math.log(2.8); // a held sound ends once it is ~9 dB below its attack
 const TOP = 5; // strongest mid-range bins kept per frame for following held notes
+// the vocal / lead-melody layer looks at 120 Hz - 4 kHz (sung fundamentals up to the main formants)
+const VOCAL_LO = Math.round(120 * FFT_SIZE / ANALYSIS_RATE), VOCAL_HI = Math.round(4000 * FFT_SIZE / ANALYSIS_RATE);
+const VOCAL_BINS = VOCAL_HI - VOCAL_LO + 1;
+const BIN_HZ = ANALYSIS_RATE / FFT_SIZE;
+const VOCAL_PRESENT = 0.2; // share of the band a sung onset holds (below: weaker)
 const TAU = Math.PI * 2;
 const yieldToBrowser = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 type Progress = (text: string) => void;
 export interface SampleAnalysis { analysis: Analysis; detectedBpm: number; warning?: string }
+export interface AnalyzeOptions {
+  /** chart at this tempo instead of detecting it */
+  bpm?: number;
+  /** the stereo difference (L - R) / 2, same rate as the input: lets the vocal layer favour the centre */
+  side?: Float32Array;
+  /** for evaluation tools: the vocal onsets found, in seconds */
+  debug?: (d: { vocalOnsets: { t: number; digit: number }[] }) => void;
+}
 export interface ImportedSong extends SampleAnalysis { song: Song; buffer: AudioBuffer }
 
 const hann = Float64Array.from({ length: FFT_SIZE }, (_, i) => 0.5 - 0.5 * Math.cos(TAU * i / (FFT_SIZE - 1)));
@@ -25,9 +38,12 @@ const reversed = Uint16Array.from({ length: FFT_SIZE }, (_, index) => {
 const cosine = Float64Array.from({ length: FFT_SIZE / 2 }, (_, i) => Math.cos(TAU * i / FFT_SIZE));
 const sine = Float64Array.from({ length: FFT_SIZE / 2 }, (_, i) => -Math.sin(TAU * i / FFT_SIZE));
 
-function fft(samples: Float32Array, start: number, real: Float64Array, imaginary: Float64Array) {
-  imaginary.fill(0);
-  for (let i = 0; i < FFT_SIZE; i++) real[reversed[i]] = samples[start + i] * hann[i];
+/** windowed FFT of `samples` from `start`; with `second`, both at once (one as the real, one as the imaginary input) */
+function fft(samples: Float32Array, start: number, real: Float64Array, imaginary: Float64Array, second?: Float32Array) {
+  for (let i = 0; i < FFT_SIZE; i++) {
+    real[reversed[i]] = samples[start + i] * hann[i];
+    imaginary[reversed[i]] = second ? second[start + i] * hann[i] : 0;
+  }
   for (let length = 2; length <= FFT_SIZE; length *= 2) {
     const half = length / 2, stride = FFT_SIZE / length;
     for (let start = 0; start < FFT_SIZE; start += length) {
@@ -70,12 +86,19 @@ function resample(samples: Float32Array, rate: number): Float32Array {
  * 4. Onsets are peak-picked per band and each lands on exactly one step, with strength 0-9
  *    (lightly compensated for quiet sections). Held sounds (808s, vocals, leads) give each step
  *    a sustain length, and every step gets the section's energy.
+ * 5. Vocals: the centre of the stereo mix (where lead vocals sit) in 120 Hz-4 kHz, minus what
+ *    repeats from bar to bar (the backing: REPET on the beat grid), minus what's percussive (median
+ *    filtering, Fitzgerald 2010). Onsets of what's left are sung syllables and notes (SuperFlux, so
+ *    vibrato doesn't count as a new note); each gets a strength, a pitch and how long it's held.
+ *    Measured on a cappellas mixed over beats, this finds about twice as many sung syllables (over
+ *    chance) as following the drum bands did.
  */
-export async function analyzeSamples(input: Float32Array, inputRate: number, onProgress: Progress = () => {}, opts: { bpm?: number } = {}): Promise<SampleAnalysis> {
+export async function analyzeSamples(input: Float32Array, inputRate: number, onProgress: Progress = () => {}, opts: AnalyzeOptions = {}): Promise<SampleAnalysis> {
   if (!Number.isFinite(inputRate) || inputRate < 8000 || input.length < FFT_SIZE) {
     throw new Error('This audio does not contain enough usable samples.');
   }
   const samples = resample(input, inputRate);
+  const side = opts.side && opts.side.length === input.length ? resample(opts.side, inputRate) : null;
   const duration = samples.length / ANALYSIS_RATE;
   const frameCount = Math.floor((samples.length - FFT_SIZE) / HOP) + 1;
   const frameTime = (f: number) => f * DT + FRAME_CENTER + ONSET_SHIFT;
@@ -95,16 +118,38 @@ export async function analyzeSamples(input: Float32Array, inputRate: number, onP
     for (let b = 0; b < flux.length; b++) if (hz >= BAND_EDGES[b] && hz < BAND_EDGES[b + 1]) { binBand[bin] = b; bandBins[b]++; }
   }
   const real = new Float64Array(FFT_SIZE), imaginary = new Float64Array(FFT_SIZE);
+  const packedReal = new Float64Array(FFT_SIZE), packedImaginary = new Float64Array(FFT_SIZE);
+  // the vocal band, weighted towards the centre of the stereo image (magnitude, frames x bins)
+  const vocalSpec = new Float32Array(frameCount * VOCAL_BINS);
   const bins = FFT_SIZE / 2 + 1;
   // compare against the frame two hops back: sharper attacks, less smearing from slow swells
   const history = [new Float64Array(bins), new Float64Array(bins)];
   for (let frame = 0; frame < frameCount; frame++) {
-    fft(samples, frame * HOP, real, imaginary);
+    if (side) {
+      // mid and side in one transform, then pulled apart: X[k] = (Z[k] + Z*[N-k]) / 2, Y[k] = (Z[k] - Z*[N-k]) / 2i
+      fft(samples, frame * HOP, packedReal, packedImaginary, side);
+      for (let bin = 0; bin < bins; bin++) {
+        const n = (FFT_SIZE - bin) % FFT_SIZE;
+        real[bin] = (packedReal[bin] + packedReal[n]) / 2;
+        imaginary[bin] = (packedImaginary[bin] - packedImaginary[n]) / 2;
+      }
+    } else fft(samples, frame * HOP, real, imaginary);
+    for (let k = 0; k < VOCAL_BINS; k++) {
+      const bin = VOCAL_LO + k, n = FFT_SIZE - bin;
+      const mid2 = real[bin] ** 2 + imaginary[bin] ** 2;
+      // centre-ness: 1 where left and right agree (mid >> side), 0 for wide or one-sided sounds
+      let centre = 1;
+      if (side) {
+        const side2 = ((packedImaginary[bin] + packedImaginary[n]) ** 2 + (packedReal[bin] - packedReal[n]) ** 2) / 4;
+        centre = Math.max(0, (mid2 - side2) / (mid2 + side2 + 1e-12));
+      }
+      vocalSpec[frame * VOCAL_BINS + k] = 1000 * Math.sqrt(mid2) / FFT_SIZE * centre;
+    }
     const back = history[frame % 2];
     let lb = 0, lm = -Infinity;
     const top = new Array(TOP).fill(-Infinity), topBin = new Array(TOP).fill(0);
     for (let bin = 0; bin < bins; bin++) {
-      const linear = Math.hypot(real[bin], imaginary[bin]) / FFT_SIZE;
+      const linear = Math.sqrt(real[bin] * real[bin] + imaginary[bin] * imaginary[bin]) / FFT_SIZE;
       const magnitude = Math.log1p(1000 * linear);
       const b = binBand[bin];
       if (b >= 0) {
@@ -248,6 +293,68 @@ export async function analyzeSamples(input: Float32Array, inputRate: number, onP
   }
   const gridFit = onsetTotal > 0 ? onGrid / onsetTotal : 0;
 
+  // vocals: onsets of the tonal centre layer (sung syllables / notes) onto the grid, with pitch
+  onProgress('Following the vocals…');
+  await yieldToBrowser();
+  // take out what repeats every bar (the backing), then what's percussive; onsets of what's left
+  const foreground = await withoutRepeats(vocalSpec, frameCount, beats.map(t => (t - FRAME_CENTER - ONSET_SHIFT) / DT));
+  const harmonic = await harmonicPart(foreground, frameCount, VOCAL_BINS);
+  const vocalOdf = superFlux(harmonic, frameCount, VOCAL_BINS);
+  const vocalScale = Math.max(1e-7, percentile(vocalOdf, 0.95));
+  for (let i = 0; i < frameCount; i++) vocalOdf[i] /= vocalScale;
+  // loudness of the tonal layer per frame (for holds), and its typical level (to judge quiet sections)
+  // and its share of everything in the band: a drum loop leaves almost nothing behind, a voice a lot
+  const vocalLevel = new Float32Array(frameCount), vocalShare = new Float32Array(frameCount);
+  for (let f = 0; f < frameCount; f++) {
+    let sum = 0, all = 0;
+    for (let k = 0; k < VOCAL_BINS; k++) {
+      sum += harmonic[f * VOCAL_BINS + k];
+      all += vocalSpec[f * VOCAL_BINS + k];
+    }
+    vocalLevel[f] = Math.log(1e-6 + sum);
+    vocalShare[f] = all > 0 ? sum / all : 0;
+  }
+  const vocalDigits = new Uint8Array(steps), vocalFrame = new Int32Array(steps).fill(-1);
+  const vocalPeaks = pickPeaks(vocalOdf);
+  const vocalRef = Math.max(1e-6, percentile(Float32Array.from(vocalPeaks.map(p => p.strength)), 0.9));
+  const vocalAvg = movingAverage(vocalOdf, Math.round(4 / DT));
+  const vocalTypical = Math.max(1e-6, median(Array.from(vocalAvg.filter((_, i) => rms[i] > loud * 0.05))));
+  const vocalOnsets: { t: number; digit: number }[] = [];
+  for (const p of vocalPeaks) {
+    const comp = Math.min(1.5, Math.max(0.75, (vocalTypical / Math.max(1e-6, vocalAvg[p.frame])) ** 0.3));
+    let share = 0;
+    for (let k = p.frame; k <= Math.min(frameCount - 1, p.frame + 5); k++) share = Math.max(share, vocalShare[k]);
+    const present = Math.min(1, share / VOCAL_PRESENT);
+    const digit = strengthDigit(p.strength * comp * present / vocalRef);
+    if (digit < 2) continue;
+    const t = frameTime(p.frame + p.offset);
+    vocalOnsets.push({ t, digit });
+    const j = nearestStep(t);
+    if (Math.abs(grid[j] - t) > stepLength(j) * 0.5) continue;
+    if (digit > vocalDigits[j]) { vocalDigits[j] = digit; vocalFrame[j] = p.frame; }
+  }
+  opts.debug?.({ vocalOnsets });
+  // pitch of each vocal step (MIDI note, '.' = none) and how long it's sung
+  const pitchChars: string[] = new Array(steps).fill('.');
+  const vocalHeld = new Float32Array(steps);
+  let nextVocal = -1;
+  for (let j = steps - 1; j >= 0; j--) {
+    const f0 = vocalFrame[j];
+    if (f0 < 0) continue;
+    const midi = pitchAt(harmonic, f0, frameCount);
+    if (midi) pitchChars[j] = String.fromCharCode(64 + midi - PITCH_MIN);
+    // held while the tonal layer stays within ~9 dB of the note's start, until the next sung note
+    const end = nextVocal >= 0 ? nextVocal : frameCount;
+    let ref = -Infinity;
+    for (let k = f0 + 1; k <= Math.min(end - 1, f0 + 4); k++) ref = Math.max(ref, vocalLevel[k]);
+    let last = f0, gap = 0;
+    for (let f = f0 + 1; f < end && gap <= 6; f++) {
+      if (vocalLevel[f] >= ref - SUSTAIN_DROP) { last = f; gap = 0; } else gap++;
+    }
+    vocalHeld[j] = (last - f0) * DT;
+    if (vocalDigits[j] >= 3) nextVocal = f0;
+  }
+
   // held sounds: follow the pitch that rings out after a hit (808 note, sung or synth note) while it
   // stays within ~9 dB of its attack, letting it drift a bin per frame (glides, vibrato, reverb smear);
   // drums on top don't cut it off, a re-attack of the same pitch does
@@ -280,6 +387,7 @@ export async function analyzeSamples(input: Float32Array, inputRate: number, onP
     let held = 0;
     if (stepFrame[0][j] >= 0 && stepDigits[0][j] >= 4) held = Math.max(held, ringFrom(stepFrame[0][j], false));
     if (stepFrame[1][j] >= 0 && stepDigits[1][j] >= 3) held = Math.max(held, ringFrom(stepFrame[1][j], true));
+    if (vocalDigits[j] >= 3) held = Math.max(held, vocalHeld[j]);
     sustainChars[j] = Math.min(35, Math.floor(held / stepLength(j) + 0.25)).toString(36);
     if (j % 2048 === 0) await yieldToBrowser();
   }
@@ -308,6 +416,7 @@ export async function analyzeSamples(input: Float32Array, inputRate: number, onP
     low: Array.from(stepDigits[0]).join(''), mid: Array.from(stepDigits[1]).join(''), high: Array.from(stepDigits[2]).join(''),
     gridFit, grid, beats: bounds, downbeat: downbeatBeat * 4,
     sustain: sustainChars.join(''), energy: energyChars.join(''),
+    vocal: Array.from(vocalDigits).join(''), pitch: pitchChars.join(''),
   };
   onProgress('Your custom challenge is ready.');
   return { analysis, detectedBpm: bpm, ...(warning ? { warning } : {}) };
@@ -420,6 +529,139 @@ function subdivisionStrength(x: Float32Array, beats: number[]) {
   return onBeat > 0 ? { half: half / onBeat, quarter: quarter / onBeat } : { half: 0, quarter: 0 };
 }
 
+/**
+ * The tonal (harmonic) part of a magnitude spectrogram, by median filtering: along time a held note is
+ * steady and a drum hit is an outlier, along frequency it's the other way round (Fitzgerald 2010).
+ * Soft (Wiener) mask, 9-frame / 9-bin medians.
+ */
+async function harmonicPart(spec: Float32Array, frames: number, nb: number): Promise<Float32Array> {
+  const out = new Float32Array(spec.length);
+  const row = (f: number) => (f < 0 ? 0 : f >= frames ? frames - 1 : f) * nb;
+  const bin = (base: number, k: number) => spec[base + (k < 0 ? 0 : k >= nb ? nb - 1 : k)];
+  for (let f = 0; f < frames; f++) {
+    // along time: the same bin over 9 frames; along frequency: 9 bins of this frame
+    const r0 = row(f - 4), r1 = row(f - 3), r2 = row(f - 2), r3 = row(f - 1), r4 = f * nb, r5 = row(f + 1), r6 = row(f + 2), r7 = row(f + 3), r8 = row(f + 4);
+    for (let k = 0; k < nb; k++) {
+      const h = median9(spec[r0 + k], spec[r1 + k], spec[r2 + k], spec[r3 + k], spec[r4 + k], spec[r5 + k], spec[r6 + k], spec[r7 + k], spec[r8 + k]);
+      const i = r4 + k;
+      const p = k >= 4 && k < nb - 4
+        ? median9(spec[i - 4], spec[i - 3], spec[i - 2], spec[i - 1], spec[i], spec[i + 1], spec[i + 2], spec[i + 3], spec[i + 4])
+        : median9(bin(r4, k - 4), bin(r4, k - 3), bin(r4, k - 2), bin(r4, k - 1), spec[i], bin(r4, k + 1), bin(r4, k + 2), bin(r4, k + 3), bin(r4, k + 4));
+      out[i] = spec[i] * (h * h) / (h * h + p * p + 1e-12);
+    }
+    if (f % 1024 === 0) await yieldToBrowser();
+  }
+  return out;
+}
+
+/** median of nine values (Paeth's 19-comparison network) */
+function median9(p0: number, p1: number, p2: number, p3: number, p4: number, p5: number, p6: number, p7: number, p8: number) {
+  let t: number;
+  if (p1 > p2) { t = p1; p1 = p2; p2 = t; } if (p4 > p5) { t = p4; p4 = p5; p5 = t; } if (p7 > p8) { t = p7; p7 = p8; p8 = t; }
+  if (p0 > p1) { t = p0; p0 = p1; p1 = t; } if (p3 > p4) { t = p3; p3 = p4; p4 = t; } if (p6 > p7) { t = p6; p6 = p7; p7 = t; }
+  if (p1 > p2) { t = p1; p1 = p2; p2 = t; } if (p4 > p5) { t = p4; p4 = p5; p5 = t; } if (p7 > p8) { t = p7; p7 = p8; p8 = t; }
+  if (p0 > p3) p3 = p0; if (p5 > p8) p5 = p8; if (p4 > p7) { t = p4; p4 = p7; p7 = t; }
+  if (p3 > p6) p6 = p3; if (p1 > p4) p4 = p1; if (p2 > p5) p2 = p5;
+  if (p4 > p7) p4 = p7; if (p4 > p2) { t = p4; p4 = p2; p2 = t; } if (p6 > p4) p4 = p6;
+  return p4 > p2 ? p2 : p4;
+}
+
+/**
+ * What doesn't repeat from bar to bar (REPET, Rafii & Pardo 2013, beat-synchronous): the backing
+ * (loops, drum patterns, chord cycles) is estimated at each frame as the median of the same spot in
+ * the bars around it and taken out; the lead vocal, which doesn't repeat like that, is what's left.
+ */
+async function withoutRepeats(spec: Float32Array, frames: number, beatFrames: number[]): Promise<Float32Array> {
+  const out = new Float32Array(spec.length);
+  // the same spot 1-4 bars (of 4 beats) before and after
+  const offsets: number[] = [];
+  for (let n = 1; n <= 4; n++) offsets.push(-n * 4, n * 4);
+  const vals = new Float32Array(offsets.length + 1);
+  const pos = new Int32Array(offsets.length + 1);
+  let b = 0;
+  for (let f = 0; f < frames; f++) {
+    while (b + 2 < beatFrames.length && beatFrames[b + 1] <= f) b++;
+    const span = beatFrames[b + 1] - beatFrames[b];
+    const phase = span > 0 ? (f - beatFrames[b]) / span : 0;
+    let n = 0;
+    pos[n++] = f;
+    for (const o of offsets) {
+      const j = b + o;
+      if (j < 0 || j + 1 >= beatFrames.length) continue;
+      const g = Math.round(beatFrames[j] + phase * (beatFrames[j + 1] - beatFrames[j]));
+      if (g >= 0 && g < frames) pos[n++] = g;
+    }
+    for (let k = 0; k < VOCAL_BINS; k++) {
+      for (let i = 0; i < n; i++) {
+        const v = spec[pos[i] * VOCAL_BINS + k];
+        let x = i;
+        while (x > 0 && vals[x - 1] > v) { vals[x] = vals[x - 1]; x--; }
+        vals[x] = v;
+      }
+      const background = n >= 3 ? vals[n >> 1] : 0;
+      const own = spec[f * VOCAL_BINS + k];
+      out[f * VOCAL_BINS + k] = own > background ? own - background : 0;
+    }
+    if (f % 1024 === 0) await yieldToBrowser();
+  }
+  return out;
+}
+
+/** SuperFlux onset signal (Böck & Widmer 2013): rises against the max of nearby bins two frames back,
+ * so a wavering pitch (vibrato, slides) isn't mistaken for a new note. Formant range weighted most. */
+function superFlux(linear: Float32Array, frames: number, nb: number) {
+  const out = new Float32Array(frames);
+  const spec = linear.map(Math.log1p);
+  const weight = Float32Array.from({ length: nb }, (_, k) => {
+    const hz = (VOCAL_LO + k) * BIN_HZ;
+    return hz < 200 || hz > 3500 ? 0.5 : 1;
+  });
+  for (let f = 2; f < frames; f++) {
+    let sum = 0;
+    for (let k = 0; k < nb; k++) {
+      let ref = 0;
+      for (let d = Math.max(0, k - 2); d <= Math.min(nb - 1, k + 2); d++) ref = Math.max(ref, spec[(f - 2) * nb + d]);
+      sum += weight[k] * Math.max(0, spec[f * nb + k] - ref);
+    }
+    out[f] = sum / nb;
+  }
+  return out;
+}
+
+const PITCH_MIN = 40, PITCH_MAX = 84; // E2-C6: sung range
+
+/** strength of the best harmonic series (f0 + 7 overtones) across candidate pitches at frame f */
+function salience(spec: Float32Array, f: number) {
+  let best = 0, bestMidi = 0, total = 0;
+  for (let k = 0; k < VOCAL_BINS; k++) total += spec[f * VOCAL_BINS + k];
+  const mean = total / VOCAL_BINS;
+  for (let midi = PITCH_MIN; midi <= PITCH_MAX; midi++) {
+    const hz = 440 * 2 ** ((midi - 69) / 12);
+    let sum = 0, weight = 1;
+    for (let h = 1; h <= 8; h++, weight *= 0.85) {
+      const x = h * hz / BIN_HZ - VOCAL_LO;
+      if (x < 0) continue;
+      if (x >= VOCAL_BINS - 1) break;
+      const a = Math.floor(x), frac = x - a;
+      sum += weight * (spec[f * VOCAL_BINS + a] * (1 - frac) + spec[f * VOCAL_BINS + a + 1] * frac);
+    }
+    if (sum > best) { best = sum; bestMidi = midi; }
+  }
+  return { midi: bestMidi, ratio: mean > 0 ? best / (mean * 4.4) : 0 };
+}
+
+/** the sung pitch just after an onset (the most common best pitch over 20-70 ms), or 0 */
+function pitchAt(spec: Float32Array, f0: number, frames: number) {
+  const votes = new Map<number, number>();
+  for (let f = f0 + 2; f <= Math.min(frames - 1, f0 + 7); f++) {
+    const s = salience(spec, f);
+    if (s.ratio > 1.2) votes.set(s.midi, (votes.get(s.midi) ?? 0) + s.ratio);
+  }
+  let best = 0, at = 0;
+  for (const [midi, v] of votes) if (v > best) { best = v; at = midi; }
+  return at;
+}
+
 /** dynamic-programming beat tracker (Ellis 2007, as in librosa): follows tempo drift */
 function trackBeats(odf: Float32Array, period: number): number[] {
   const n = odf.length;
@@ -499,7 +741,7 @@ export async function importSong(file: File, ctx: AudioContext, onProgress: Prog
     throw new Error('Choose a recording between 10 seconds and 15 minutes long.');
   }
   // Analyze a low-rate mono copy; retain the original buffer for playback.
-  const result = await analyzeSamples(await monoForAnalysis(buffer), ANALYSIS_RATE, onProgress);
+  const result = await analyzeSamples(await monoForAnalysis(buffer), ANALYSIS_RATE, onProgress, { side: await sideForAnalysis(buffer) });
   const title = file.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim().slice(0, 100) || 'Custom challenge';
   const seed = new DataView(digest.buffer).getUint32(0, false) || 1;
   const song: Song = {
@@ -515,8 +757,26 @@ export async function importSong(file: File, ctx: AudioContext, onProgress: Prog
 
 /** chart an import again at a tempo the player picked (half or double of what was detected) */
 export async function retimeImport(song: Song, buffer: AudioBuffer, bpm: number, onProgress: Progress = () => {}): Promise<Song> {
-  const { analysis } = await analyzeSamples(await monoForAnalysis(buffer), ANALYSIS_RATE, onProgress, { bpm });
+  const { analysis } = await analyzeSamples(await monoForAnalysis(buffer), ANALYSIS_RATE, onProgress, { bpm, side: await sideForAnalysis(buffer) });
   return { ...song, bpm: analysis.bpm, analysis };
+}
+
+/** the stereo difference (L - R) / 2 at the analysis rate, or undefined for mono recordings */
+async function sideForAnalysis(buffer: AudioBuffer) {
+  if (buffer.numberOfChannels < 2) return undefined;
+  const length = Math.floor(buffer.duration * ANALYSIS_RATE);
+  const out = new Float32Array(length);
+  const ratio = buffer.sampleRate / ANALYSIS_RATE;
+  const l = buffer.getChannelData(0), r = buffer.getChannelData(1);
+  const at = (ch: Float32Array, p: number) => {
+    const a = Math.floor(p), frac = p - a;
+    return ch[a] * (1 - frac) + (ch[Math.min(a + 1, ch.length - 1)] ?? 0) * frac;
+  };
+  for (let i = 0; i < length; i++) {
+    out[i] = (at(l, i * ratio) - at(r, i * ratio)) / 2;
+    if (i % (ANALYSIS_RATE * 8) === 0) await yieldToBrowser();
+  }
+  return out;
 }
 
 /** a mono copy at the analysis rate */
