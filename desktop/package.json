@@ -6,6 +6,10 @@
   "description": "Two buttons. Real beats. Don't miss. A two-lane rhythm game.",
   "author": "Line Rush",
   "homepage": "https://github.com/w7llywonka/rythym-web",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/w7llywonka/rythym-web.git"
+  },
   "license": "MIT",
   "type": "module",
   "main": "main.js",

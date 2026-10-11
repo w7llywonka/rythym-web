@@ -128,7 +128,7 @@ npm run app        # build the game and open it in the app (first: npm --prefix 
 npm run app:dist   # make an installer for this computer in desktop/release/
 ```
 
-**Releases:** `.github/workflows/desktop.yml` builds the Windows installer, the macOS dmg and the Linux AppImage / deb. Bump `version` in `desktop/package.json`, then push a matching tag (`git tag v1.0.1 && git push --tags`), and the installers are published to a GitHub Release that installed apps update from. Run the workflow by hand to just get the installers as downloads. macOS builds aren't code-signed, so the first launch needs right-click → Open.
+**Releases:** `.github/workflows/desktop.yml` builds the Windows installer, the macOS dmg and the Linux AppImage / deb. Bump `version` in `desktop/package.json` and push it to main (or push a tag like `v1.0.1`), and the installers are published to the GitHub Release `v<version>`, which installed apps update from. Run the workflow by hand to just get the installers as downloads. macOS builds aren't code-signed, so the first launch needs right-click → Open.
 
 **Settings for a build** (repository variables, or `desktop/app-config.json`):
 - `LINE_RUSH_SERVER`: the address of your online server (e.g. your Railway domain). Without it the app plays offline as a guest; players can also enter a server under APP.
