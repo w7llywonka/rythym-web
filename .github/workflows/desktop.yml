@@ -1,7 +1,8 @@
 # Builds the Line Rush app for Windows, macOS and Linux.
 # - Push a tag like v1.0.1 (matching desktop/package.json "version") to publish the installers to a
 #   GitHub Release; installed apps update themselves from there.
-# - Run it by hand (Actions -> Desktop app -> Run workflow) to just get the installers as artifacts.
+# - Run it by hand (Actions -> Desktop app -> Run workflow) to just get the installers as artifacts,
+#   or tick "publish" to put them in a GitHub Release v<version> (made for you if it doesn't exist).
 # Optional repository variables (Settings -> Secrets and variables -> Actions -> Variables):
 #   LINE_RUSH_SERVER  the online server the app uses (e.g. https://your-game.up.railway.app)
 #   DISCORD_CLIENT_ID a Discord application ID, for "Playing Line Rush" status on Discord
@@ -11,6 +12,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the installers to the GitHub Release for desktop/package.json's version
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -62,7 +68,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false' # builds aren't code-signed
         run: |
           npm ci
-          npm run ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || 'dist' }}
+          npm run ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.publish) && 'release' || 'dist' }}
 
       - uses: actions/upload-artifact@v4
         with:
