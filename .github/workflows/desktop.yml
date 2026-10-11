@@ -35,8 +35,12 @@ jobs:
       - name: Build the game
         run: |
           npm ci
-          npm test
           npm run build
+
+      # the tests are the same on every system; once is enough (one of them uses a Unix socket)
+      - name: Test
+        if: runner.os == 'Linux'
+        run: npm test
 
       - name: App settings for this build
         shell: bash
@@ -55,6 +59,7 @@ jobs:
         working-directory: desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false' # builds aren't code-signed
         run: |
           npm ci
           npm run ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || 'dist' }}
