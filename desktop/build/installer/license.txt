@@ -1,0 +1,58 @@
+LINE RUSH: THE SHORT VERSION
+
+Line Rush is free to play, and its code is open source.
+
+  * Play it as much as you like, on as many computers as you like.
+  * Your scores and settings are saved on this computer, and in your
+    Line Rush account if you make one.
+  * Line Rush keeps itself up to date: it checks for new versions on
+    GitHub and installs them for you.
+  * Songs you import stay on this computer. They are never uploaded.
+
+The rest of this page is the fine print that makes all of that official.
+
+
+THE MUSIC
+
+The ten original Line Rush songs were made for the game. They are
+dedicated to the public domain under CC0 1.0.
+
+The nine licensed songs are by other artists and keep their own
+licenses: each one is CC0 1.0 or CC BY 4.0. Every artist is credited in
+the game (CREDITS on the home screen, and on each song's panel) and in
+MUSIC-LICENSE.md:
+https://github.com/w7llywonka/rythym-web/blob/main/MUSIC-LICENSE.md
+
+
+THE CODE (MIT License)
+
+Copyright (c) 2026 Line Rush contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+BUILT WITH
+
+Line Rush runs on Electron and Chromium, which have their own open
+source licenses. You'll find them in the folder Line Rush is installed
+in: LICENSE.electron.txt and LICENSES.chromium.html.
+
+
+Thanks for playing!
