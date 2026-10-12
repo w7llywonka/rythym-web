@@ -1,6 +1,6 @@
 // Customize: lane / chord colors, line style and thickness, with a live preview. The line style goes
-// through every skin: ones you haven't unlocked yet show in the preview with how to get them, but
-// only unlocked ones are used.
+// through every skin: ones you haven't unlocked yet show in the preview with how to get them. Stepping
+// only browses; the skin you leave on is used if it's unlocked, else you keep the one you had.
 import { NOTE_SKINS, describeRule, isUnlocked } from '../../shared/cosmetics.js';
 import { DEFAULT_SETTINGS, T } from '../config.ts';
 import { NOTE_SIZE, NOTE_STYLES, SWATCHES, styleHold, styleNote } from '../look.ts';
@@ -8,7 +8,7 @@ import type { NoteStyle } from '../types.ts';
 import { $, html, rgba, show, txt } from '../ui.ts';
 import { queueSave } from './save.ts';
 import { openSettings, refreshSettings } from './settingsPanel.ts';
-import { LOCK_ICON, cycle } from './settingsView.ts';
+import { LOCK_ICON, cycle, keptSkin, skinHint } from './settingsView.ts';
 import { escapeHtml, onClick, openModal } from './shell.ts';
 import { settings } from './state.ts';
 import { activeNoteStyle, unlockStats } from './unlocks.ts';
@@ -17,7 +17,7 @@ type Row = 'lane1' | 'lane2' | 'chord';
 const ROWS: Row[] = ['lane1', 'lane2', 'chord'];
 const colorOf = (row: Row) => (row === 'chord' ? settings().chordColor : settings().laneColors[row === 'lane1' ? 0 : 1]);
 
-/** the skin the style stepper is on (it can be a locked one; the setting keeps the last unlocked one) */
+/** the skin the style stepper is on (it can be a locked one; the setting only changes when you leave) */
 let browse: NoteStyle = 'Glow';
 const skinOf = (id: NoteStyle) => NOTE_SKINS.find(x => x.id === id) ?? NOTE_SKINS[0];
 const skinOpen = (id: NoteStyle) => isUnlocked(skinOf(id).unlock, unlockStats());
@@ -85,7 +85,8 @@ function refresh() {
   html($('custom.style.value'), `${open ? '' : LOCK_ICON}${escapeHtml(skin.label)}`);
   $('custom.style.value').style.color = open ? T.text : T.muted;
   const count = NOTE_SKINS.filter(x => isUnlocked(x.unlock, stats)).length;
-  txt($('custom.style.hint'), `${count} of ${NOTE_SKINS.length} skins unlocked`);
+  txt($('custom.style.hint'), skinHint(open, skinOf(activeNoteStyle()).label, count, NOTE_SKINS.length));
+  $('custom.style.hint').style.color = open ? T.muted : T.text;
   txt($('custom.skinname'), skin.label);
   html($('custom.skindesc'), open ? escapeHtml(skin.desc) : `${LOCK_ICON}${escapeHtml(describeRule(skin.unlock))}`);
   $('custom.skindesc').style.color = open ? T.muted : T.gold;
@@ -110,6 +111,8 @@ export function openCustom() {
 }
 
 export function closeCustom() {
+  const had = activeNoteStyle(), next = keptSkin(browse, skinOpen(browse), had);
+  if (next !== had) settings().noteStyle = next;
   queueSave();
   openSettings();
 }
@@ -119,10 +122,9 @@ export function initCustomize() {
     SWATCHES.forEach((c, i) => onClick(`custom.${row}.sw${i}`, () => setColor(row, c)));
     $(`custom.${row}.pick`).addEventListener('input', e => setColor(row, (e.target as HTMLInputElement).value));
   }
-  // every skin, locked ones too (shown, not used)
+  // every skin, locked ones too (shown, not used); skins you only pass over aren't used either
   const shiftStyle = (dir: number) => {
     browse = cycle(NOTE_STYLES, browse, dir);
-    if (skinOpen(browse)) settings().noteStyle = browse;
     refresh();
   };
   const shiftSize = (dir: number) => {

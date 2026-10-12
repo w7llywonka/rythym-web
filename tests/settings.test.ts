@@ -1,8 +1,8 @@
 // Settings helpers (src/app/settingsView.ts), line skins and hit effects (src/look.ts).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HIT_EFFECTS, NOTE_SKINS } from '../shared/cosmetics.js';
-import { choiceHint, cycle, dimText, fpsColor, hudLook, percent, resetSettings, stepTenth } from '../src/app/settingsView.ts';
+import { HIT_EFFECTS, NOTE_SKINS, isUnlocked } from '../shared/cosmetics.js';
+import { choiceHint, cycle, dimText, fpsColor, hudLook, keptSkin, percent, resetSettings, skinHint, stepTenth } from '../src/app/settingsView.ts';
 import { DEFAULT_SETTINGS, HIT_SOUNDS, T } from '../src/config.ts';
 import { HIT_EFFECT_IDS, NOTE_STYLES, laneLook, mix, playHitEffect, shade, styleHold, styleNote } from '../src/look.ts';
 import type { HitEffect, NoteStyle, Settings } from '../src/types.ts';
@@ -67,6 +67,21 @@ test('settings: FPS colors and locked hints', () => {
   const sparks = HIT_EFFECTS.find(e => e.id === 'Sparks')!;
   assert.equal(choiceHint(sparks, true), sparks.desc);
   assert.equal(choiceHint(sparks, false), 'Sparks  ·  Reach level 10');
+});
+
+test('settings: browsing the line style past locked skins keeps the one in use', () => {
+  // a level 6 player on Glow: Neon (level 5) is open, Pixel (level 8) isn't
+  const open = (id: NoteStyle) => isUnlocked(NOTE_SKINS.find(x => x.id === id)!.unlock, { level: 6 } as never);
+  let shown: NoteStyle = 'Glow';
+  for (let i = 0; i < 5; i++) shown = cycle(NOTE_STYLES, shown, 1);
+  assert.equal(shown, 'Pixel');
+  // leaving on a locked skin keeps Glow, not Neon (the last open one passed on the way)
+  assert.equal(keptSkin(shown, open(shown), 'Glow'), 'Glow');
+  assert.equal(skinHint(open(shown), 'Glow', 5, 10), 'Locked  ·  In use: Glow');
+  // stopping on an open one uses it
+  shown = cycle(NOTE_STYLES, shown, -1);
+  assert.equal(keptSkin(shown, open(shown), 'Glow'), 'Neon');
+  assert.equal(skinHint(open(shown), 'Glow', 5, 10), '5 of 10 skins unlocked');
 });
 
 test('look: colors and lane dim', () => {
