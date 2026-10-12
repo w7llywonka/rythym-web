@@ -1,4 +1,5 @@
 // Home: player chip, weekly challenge (King of the Hill), live feed of big plays, how-to.
+// Names show with their tag and name color (nameplate.ts).
 import { api, type FeedItem } from '../api.ts';
 import { MODES, T } from '../config.ts';
 import { formatNumber, keyName, levelFromXp } from '../scoring.ts';
@@ -6,12 +7,16 @@ import type { PlaySet, Track } from '../types.ts';
 import { $, html, show, txt } from '../ui.ts';
 import { currentWeek, pickWeekly, type WeeklyMods } from '../weekly.ts';
 import { openWeeklyBoard } from './board.ts';
+import { refreshLockerBadges } from './locker.ts';
+import { nameplateHtml, renderNameplate } from './nameplate.ts';
+import { openProfile } from './profile.ts';
 import { openSettings } from './settingsPanel.ts';
 import { startRun } from './play.ts';
 import { playPreview } from './preview.ts';
 import { setTab } from './select.ts';
 import { escapeHtml, go, onClick } from './shell.ts';
 import { S, settings } from './state.ts';
+import { lookForServer } from './unlocks.ts';
 
 export let weekly: { week: number; ends: number; track: Track; mods: WeeklyMods } | null = null;
 
@@ -21,11 +26,12 @@ export function refreshHome() {
   html($('home.howto'), `Press <b style="color:${c1}">${key(0)}</b> and <b style="color:${c2}">${key(1)}</b> (or tap the buttons) when the lines reach them`);
   const p = S.data.profile;
   const { level, rest, need } = levelFromXp(p.xp);
-  txt($('home.chip.name'), S.account ? S.account.username : 'Guest');
+  renderNameplate($('home.chip.name'), S.account ? S.account.username : 'Guest', lookForServer());
   txt($('home.chip.level'), `LV ${level}`);
   $('home.chip.xp.fill').style.width = `${Math.min(1, rest / need) * 100}%`;
   const streak = p.streak > 0 ? `STREAK ${p.streak} DAY${p.streak === 1 ? '' : 'S'}` : 'Play today to start a streak';
   txt($('home.chip.streak'), streak + (p.title ? `  ·  ${p.title.toUpperCase()}` : ''));
+  refreshLockerBadges();
 }
 
 // ---- weekly challenge ----------------------------------------------------------------------
@@ -55,7 +61,8 @@ export function refreshWeekly() {
   void api.weeklyBoard().then(res => {
     if (!res.ok || !res.data) return txt($('home.weekly.king'), "Couldn't load the board");
     const [king] = res.data.entries;
-    txt($('home.weekly.king'), king ? `${king.name}  ·  ${formatNumber(king.score)}` : 'Nobody yet. Claim it!');
+    if (king) html($('home.weekly.king'), `${nameplateHtml(king.name, king)}<span style="color:${T.muted}">  ·  ${formatNumber(king.score)}</span>`);
+    else txt($('home.weekly.king'), 'Nobody yet. Claim it!');
     const mine = res.data.mine;
     txt($('home.weekly.mine'), mine ? `Your best: ${formatNumber(mine.score)}  ·  #${mine.rank}` : local ? `Your best: ${formatNumber(local)}` : '');
   });
@@ -68,7 +75,7 @@ const ago = (at: number) => {
   return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`;
 };
 function feedLine(i: FeedItem) {
-  const who = `<b>${escapeHtml(i.user)}</b>`, what = `${escapeHtml(i.song)} <span style="color:${T.muted}">[${escapeHtml(i.diff)}]</span>`;
+  const who = nameplateHtml(i.user, i), what = `${escapeHtml(i.song)} <span style="color:${T.muted}">[${escapeHtml(i.diff)}]</span>`;
   const text = i.kind === 'top' ? `${who} took <b style="color:${T.gold}">#1</b> on ${what}`
     : i.kind === 'king' ? `${who} is the new <b style="color:${T.gold}">King of the Hill</b>!`
       : i.kind === 'ss' ? `${who} got an <b style="color:${T.gold}">SS</b> on ${what}`
@@ -106,6 +113,9 @@ export function initHome() {
     if (S.previewTrack !== S.selectedSong[S.tab]) void playPreview(S.selectedSong[S.tab]);
   });
   onClick('home.settings', openSettings);
+  // your chip opens your profile
+  $('home.chip').classList.add('lk-chip');
+  onClick('home.chip', () => { if (!S.transitioning) openProfile(); });
   onClick('home.weekly.board', () => { if (weekly) openWeeklyBoard(weekly.track.title, weekly.week); });
   onClick('home.weekly.play', () => {
     if (weekly) void startRun(weekly.track, weekly.track.difficulty, false, { set: weeklySet(weekly.mods), weekly: weekly.week });

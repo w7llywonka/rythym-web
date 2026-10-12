@@ -488,25 +488,35 @@ export function buildUI(app: HTMLElement) {
   label(me, 'label', { text: 'YOUR BEST', font: 'black', size: 12, color: T.muted, x: 14, w: 100, h: 48 });
   label(me, 'score', { text: '-', font: 'black', size: 18, align: 'right', ax: 1, x: [1, -14], w: 300, h: 48 });
 
-  // profile
+  // profile: your nameplate (tag + name color) and title, stats, the Locker, achievements
   const pp = panel(overlay, 'profile', 720, 600);
   label(pp, 'title', { text: 'Profile', font: 'black', size: 26, x: 32, y: 26, w: 160, h: 36 });
-  label(pp, 'ptitle', { text: '', font: 'black', size: 14, color: T.gold, x: 200, y: 36, w: 220, h: 20 });
+  const lb = button(pp, 'locker', { text: 'LOCKER', size: 13, ax: 1, x: 500, y: 28, w: 120, h: 40 });
+  label(lb, 'badge', { text: '', font: 'black', size: 10, color: T.bg0, align: 'center', ax: 0.5, ay: 0.5, x: [1, -4], y: 4, w: 22, h: 18, bg: T.pink, r: 'full', hidden: true, cls: 'lk-badge' });
   button(pp, 'account', { text: 'ACCOUNT', size: 13, ax: 1, x: 620, y: 28, w: 110, h: 40 });
-  const pst = frame(pp, 'stats', { x: 32, y: 80, w: 656, h: 140 });
+  const card = frame(pp, 'me', { x: 32, y: 82, w: 656, h: 72, bg: T.bg2, r: 14, cls: 'lk-me' });
+  label(card, 'name', { text: '', font: 'black', size: 24, truncate: true, x: 18, y: 10, w: 380, h: 32 });
+  label(card, 'title', { text: '', font: 'black', size: 11, color: T.gold, truncate: true, x: 18, y: 46, w: 380, h: 14 });
+  label(card, 'since', { text: '', font: 'med', size: 12, color: T.muted, align: 'right', ax: 1, x: [1, -18], y: 16, w: 240, h: 16 });
+  label(card, 'more', { text: '', font: 'med', size: 12, color: T.muted, align: 'right', ax: 1, x: [1, -18], y: 40, w: 240, h: 16 });
+  const pst = frame(pp, 'stats', { x: 32, y: 166, w: 656, h: 58 });
   ([['level', 'LEVEL'], ['plays', 'PLAYS'], ['noteshit', 'NOTES HIT'], ['fullcombos', 'FULL COMBOS'], ['ssranks', 'SS RANKS'], ['playtime', 'PLAY TIME']] as const).forEach(([nm, title], i) => {
-    const box = frame(pst, nm, { x: (i % 3) * 222, y: Math.floor(i / 3) * 72, w: 210, h: 64, bg: T.bg2, r: 12 });
-    label(box, 'value', { text: '0', font: 'black', size: 22, x: 14, y: 8, w: 190, h: 28 });
-    label(box, 'label', { text: title, size: 11, color: T.muted, x: 14, y: 38, w: 190, h: 14 });
+    const box = frame(pst, nm, { x: i * 110, y: 0, w: 106, h: 58, bg: T.bg2, r: 12 });
+    label(box, 'value', { text: '0', font: 'black', size: 19, x: 12, y: 8, w: 88, h: 24 });
+    label(box, 'label', { text: title, size: 9, color: T.muted, x: 12, y: 36, w: 92, h: 12 });
   });
-  label(pp, 'achheader', { text: 'Achievements  ·  click an unlocked one to wear its title', font: 'bold', size: 12, color: T.muted, x: 32, y: 236, w: 600, h: 14 });
-  const grid = frame(pp, 'achievements', { x: 32, y: 258, w: 656, h: 320 });
+  label(pp, 'achheader', { text: 'ACHIEVEMENTS', font: 'black', size: 10, color: T.muted, x: 32, y: 240, w: 300, h: 14 });
+  label(pp, 'achhint', { text: 'Click an unlocked one to wear its title', font: 'med', size: 12, color: T.dim, align: 'right', ax: 1, x: 688, y: 240, w: 340, h: 14 });
+  // all of them, scrolling
+  const grid = frame(pp, 'achievements', { x: 32, y: 262, w: 666, h: 322, scroll: true, cls: 'lk-fade' });
   ACHIEVEMENTS.forEach((_, i) => {
-    const a = button(grid, `ach${i + 1}`, { text: '', x: (i % 4) * 166, y: Math.floor(i / 4) * 106, w: 156, h: 98, r: 12 });
-    label(a, 'name', { text: '?', font: 'black', size: 13, x: 10, y: 8, w: 136, h: 18 });
-    label(a, 'desc', { text: '', font: 'med', size: 11, color: T.muted, wrap: true, valign: 'top', x: 10, y: 30, w: 136, h: 42 });
-    label(a, 'state', { text: 'LOCKED', font: 'black', size: 10, color: T.dim, x: 10, y: 76, w: 136, h: 14 });
+    const a = button(grid, `ach${i + 1}`, { text: '', x: 1 + (i % 4) * 166, y: 1 + Math.floor(i / 4) * 110, w: 155, h: 100, r: 12 });
+    label(a, 'name', { text: '?', font: 'black', size: 13, truncate: true, x: 12, y: 10, w: 131, h: 18 });
+    label(a, 'desc', { text: '', font: 'med', size: 11, color: T.muted, wrap: true, valign: 'top', x: 12, y: 30, w: 131, h: 44, cls: 'lk-lines' });
+    label(a, 'state', { text: 'LOCKED', font: 'black', size: 10, color: T.dim, truncate: true, x: 12, y: 78, w: 131, h: 14 });
   });
+  // room below the last row, so it clears the fade at the bottom
+  frame(grid, 'end', { x: 0, y: 1 + Math.ceil(ACHIEVEMENTS.length / 4) * 110, w: 1, h: 24 });
 
   // 1v1 lobby
   const vp = panel(overlay, 'versus', 560, 540);

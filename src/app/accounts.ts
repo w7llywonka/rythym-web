@@ -4,9 +4,10 @@ import { T } from '../config.ts';
 import { load as loadLocal, sanitize, withImportProgress, withoutImports } from '../storage.ts';
 import { $, show, txt } from '../ui.ts';
 import { refreshFeed, refreshHome, refreshWeekly } from './home.ts';
+import { syncLook } from './locker.ts';
 import { playPreview } from './preview.ts';
 import { saveNow, setAccountLoaded, syncState } from './save.ts';
-import { buildList } from './select.ts';
+import { buildList, creditImports } from './select.ts';
 import { refreshSettings } from './settingsPanel.ts';
 import { closeModal, onClick, openModal, showToast } from './shell.ts';
 import { S } from './state.ts';
@@ -84,6 +85,8 @@ async function signedIn(user: User, fresh: boolean) {
       await api.putSave(withoutImports(S.data));
     }
     setAccountLoaded(true, 'Progress is saved to your account');
+    // what you wear (tag, name color, title) goes to the boards / feed / 1v1
+    syncLook(0);
   } else {
     // keep playing, but never write over the account with progress it didn't load
     setAccountLoaded(false, "Couldn't load your progress. It won't sync until you log in again.");
@@ -105,6 +108,7 @@ export function signedOut() {
 }
 
 function afterDataChange() {
+  creditImports();
   refreshSettings();
   refreshHome();
   refreshWeekly();
