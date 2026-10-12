@@ -13,23 +13,28 @@ You can see how close each hit was:
 - every hit leaves a short mark where the line actually was (above the button line is early, below is late)
 - every hit shows its timing in ms
 - pressing just before a line's window shows **TOO EARLY**
-- the lane stays lit while you hold the key Hold long lines until their tail passes. Gold lines are chords: hit both. **R** restarts instantly, **Escape** pauses, and leaving the tab pauses too. In song select, the arrow keys pick songs and tabs and **Enter** plays.
+- the lane stays lit while you hold the key
+
+Hold long lines until their tail passes. Gold lines are chords: hit both. **R** restarts instantly, **Escape** pauses, and leaving the tab pauses too. In song select, the arrow keys pick songs and tabs and **Enter** plays.
+
+**First time?** The game offers a one-minute **tutorial** with its own song. Cues on the screen (showing your own keys) walk you through Button 1, Button 2, both in turn, chords and holds. You can't fail it, nothing from it is saved, and finishing it unlocks the GRADUATE tag. Replay it with TUTORIAL on the home screen. After an update, **What's New** shows what changed, once per version (WHAT'S NEW on the home screen brings it back).
 
 - **Tiers:** Easy, Hard, Expert and Extreme tabs, plus **Recent**. Each song has its own chart and a harder **"+"** chart one tier up (Easy → Hard, Hard → Expert, Expert → Extreme, Extreme → Insane).
 - **Styles:** Classic, Hardcore (×1.2: tighter timing, no healing, misses hurt more), Sudden Death (×1.3: one miss ends the run), Playground (can't fail, not saved) and Practice (loop a section you choose, not saved).
 - **Modifiers:** song speed 0.5–1.5×, Hidden, Sudden, Flashlight, Mirror, Random, Wave, Mines and Autoplay. Each one changes the score multiplier.
 - **Progression:**
   - XP and levels, with a daily streak
-  - 12 achievements that unlock titles you can wear
+  - 22 achievements that unlock titles you can wear
   - song packs, with four mastery stars per song (clear / A / S / full combo)
   - personal bests for every chart, and a results screen with a health graph and timing feedback
+- **The Locker** (Profile → LOCKER): everything you can unlock, in six tabs: titles, tags (a badge by your name, like VETERAN or ON FIRE), name colors (some are gradients), line skins, hit effects and menu themes. They unlock as you play: levels, day streaks, full combos, SS ranks, achievements, 1v1 wins, imported songs, finishing the tutorial, taking a #1 or becoming King of the Hill. A toast and a NEW badge tell you when something unlocks, and locked ones say what it takes (with how far along you are). Click one to wear it.
 - **Weekly challenge:** the same song and modifiers for everyone each week. The best score you set that week is shown on the home screen.
-- **Settings:**
-  - rebind all three keys
-  - scroll speed 0.5–3×, audio offset ±300 ms with a tap-along calibration
-  - music volume, hit sounds (Tick, Mania, Kick, Clap)
-  - effects, the hit zone, and an optional combo in the centre of the playfield
-  - **Customize**: Button 1 / Button 2 / chord colors (presets or any color), line style (Glow, Flat, Outline, Classic) and line thickness, with a live preview
+- **Settings**, in four tabs:
+  - **Controls:** rebind all three keys, scroll speed 0.5–3×, audio offset ±300 ms with a tap-along calibration
+  - **Audio:** music volume, hit sounds (Tick, Mania, Kick, Clap) with their own volume, menu music on or off
+  - **Visuals:** effects, the hit zone, lane dim, reduce motion, the hit effect (Ring, None, Burst, Sparks, Stars, Shockwave) and the menu theme; locked ones say how to unlock them
+  - **HUD:** judgments (Full, Minimal or Off), timing in ms, the timing bar, an optional combo in the centre of the playfield and an FPS counter, with a preview
+  - **Customize**: Button 1 / Button 2 / chord colors (presets or any color), line skin and line thickness, with a live preview. Glow, Flat, Outline and Classic are free; Neon, Pixel, Chrome, Ghost, Ember and Prism unlock as you play
 
 Timing windows, health drain and fall speed tighten with each tier:
 
@@ -134,7 +139,7 @@ npm run app:dist   # make an installer for this computer in desktop/release/
 **Releases:** `.github/workflows/desktop.yml` builds the Windows installer, the macOS dmg and the Linux AppImage / deb. Bump `version` in `desktop/package.json` and push it to main (or push a tag like `v1.0.1`), and the installers are published to the GitHub Release `v<version>`, which installed apps update from. Run the workflow by hand to just get the installers as downloads. Unless you add signing (below), macOS builds aren't code-signed, so the first launch needs right-click → Open.
 
 **The installers:**
-- **Windows**: a setup wizard in the game's colors that greets the player by their Windows name ("Hey Will, welcome to Line Rush!", or "Welcome back" with what's changing when it's already installed). It shows a short, friendly license, lets you pick the folder, adds desktop and Start menu shortcuts, makes the Songs folder (with a note on how it works) and ends with **Play Line Rush now** and a link to what's new. The uninstaller says that scores, settings and songs stay. Updates install silently, with no pages.
+- **Windows**: a setup wizard in the game's colors that greets the player by their Windows name ("Hey Will, welcome to Line Rush!", or "Welcome back" with what's changing when it's already installed). It shows a short, friendly license, lets you pick the folder, adds desktop and Start menu shortcuts, makes the Songs folder (with a note on how it works) and ends with **Play Line Rush now** and **See what's new** (both open as you, not as an admin). The uninstaller says that scores, settings and songs stay. Updates install silently, with no pages.
 - **macOS**: a dmg whose window shows where to drag Line Rush (into Applications).
 - **Linux**: a deb (listed under Games, with the icon at every size) and an AppImage.
 
@@ -144,7 +149,7 @@ The art (the wizard's sidebars and header, the dmg background, the Linux icons) 
 - `LINE_RUSH_SERVER`: the address of your online server (e.g. your Railway domain). Without it the app plays offline as a guest; players can also enter a server under APP.
 - `DISCORD_CLIENT_ID`: create an application at discord.com/developers (name it "Line Rush", and add the icon as a Rich Presence art asset called `logo`), then put its Application ID here.
 
-**Signing** is what makes the installers official to Windows and macOS. Signed, Windows names **Line Rush** as the verified publisher instead of "Unknown publisher" (SmartScreen can still warn about a new certificate until it has built up some reputation), and a signed and notarized Mac app opens without the "unidentified developer" warning. Add these repository secrets (Settings → Secrets and variables → Actions → Secrets) and the workflow signs on its own; without them it builds unsigned, as above:
+**Signing** is what makes the installers official to Windows and macOS. Signed, Windows names **Line Rush** as the verified publisher instead of "Unknown publisher" (SmartScreen can still warn about a new certificate until it has built up some reputation), and a signed and notarized Mac app opens without the "unidentified developer" warning. Add these repository secrets (Settings → Secrets and variables → Actions → Secrets) and the workflow signs on its own (each secret only reaches the build for its own system); without them it builds unsigned, as above:
 - Windows: `WIN_CSC_LINK` (your code signing certificate's .pfx file, base64-encoded) and `WIN_CSC_KEY_PASSWORD`.
 - macOS: `CSC_LINK` (a Developer ID Application certificate exported as .p12, base64-encoded) and `CSC_KEY_PASSWORD`. To notarize, also `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` (made at account.apple.com) and `APPLE_TEAM_ID`.
 
@@ -183,13 +188,16 @@ Timing runs on the Web Audio clock (`AudioContext.currentTime`) with latency com
 - `src/main.ts`: startup (builds the UI, wires every screen, restores the session)
 - `src/app/`: one module per screen or panel, sharing `state.ts`
   - `home` · `select` (song list + imports) · `play` (start / pause / quit) · `results` · `board` (leaderboards) · `versus` (1v1, with `vsPrep`: getting the song ready in time) · `profile` · `stylePanel` · `settingsPanel` · `customize` · `calibration` · `accounts`
+  - `tutorial` (the welcome card, the tutorial's cues and its end screen) · `whatsnew` · `locker` (with `lockerView`: what each card shows)
+  - `unlocks` (what you've unlocked and what you're wearing) · `nameplate` (names with their tag and color) · `settingsView` (what Settings and Customize show)
   - `shell` (screens, panels, toasts) · `save` · `preview` (menu music) · `keyboard` · `loop` (frame loop) · `services` (audio + game engines)
 - `src/game.ts`: gameplay (notes, holds, mines, judging, health, HUD)
 - `src/ui.ts`, `src/style.css`, `src/anim.ts`, `src/look.ts`: the interface, laid out like the Roblox ScreenGui (1100×640, scaled to fit), and how the lines look
 - `src/chart.ts`, `src/tracks.ts`, `src/custom.ts`: chart generation and the import beatmapper
 - `src/audio.ts`, `src/synthesis.ts`: Web Audio playback and the soundtrack
 - `src/config.ts`, `src/scoring.ts`, `src/storage.ts`, `src/weekly.ts`, `src/api.ts`: rules, saves, the weekly challenge and the server client
-- `shared/`: used by both the game and the server (`weekly.js`, `chart-objects.json` from `npm run charts`)
+- `src/onboarding.ts`, `src/changelog.ts`: the tutorial's song, chart and cues, who sees it or What's New at startup, and the release notes What's New shows
+- `shared/`: used by both the game and the server (`weekly.js`, `cosmetics.js`: everything you can unlock and how, `chart-objects.json` from `npm run charts`)
 - `api/_lib/`: the server: `core.js` (accounts, sessions, security), `online.js` (boards, feed), `versus.js` (1v1), `catalog.js`, `store.js` (Redis / Upstash / memory)
 - `server.js`: Node server for Railway (static files with compression + the API); `api/index.js`: the same API as a Vercel function
 - `scripts/`: music generation, analysis, `add-tracks.ts` (licensed tracks) and `chart-objects.ts`
