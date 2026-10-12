@@ -6,6 +6,12 @@
 # Optional repository variables (Settings -> Secrets and variables -> Actions -> Variables):
 #   LINE_RUSH_SERVER  the online server the app uses (e.g. https://your-game.up.railway.app)
 #   DISCORD_CLIENT_ID a Discord application ID, for "Playing Line Rush" status on Discord
+# Optional repository secrets (Settings -> Secrets and variables -> Actions -> Secrets) sign the apps, so Windows
+# and macOS name "Line Rush" as the publisher instead of warning about an unknown app. Without them the
+# installers are built unsigned, as before. Each one is only used on its own system:
+#   WIN_CSC_LINK, WIN_CSC_KEY_PASSWORD  Windows: the code signing certificate (.pfx, base64) and its password
+#   CSC_LINK, CSC_KEY_PASSWORD          macOS: the Developer ID Application certificate (.p12, base64) and its password
+#   APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID  macOS notarization (needs the certificate above)
 name: Desktop app
 
 on:
@@ -63,12 +69,35 @@ jobs:
             fs.writeFileSync(p, JSON.stringify(c, null, 2));
           "
 
+      # electron-builder signs when CSC_LINK / WIN_CSC_LINK are set, so they're only set when the secret exists
+      # (an empty one breaks the build) and only on their own system (Windows falls back to CSC_LINK)
       - name: Package
         working-directory: desktop
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false' # builds aren't code-signed
+          WIN_CERT: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CERT_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          MAC_CERT: ${{ secrets.CSC_LINK }}
+          MAC_CERT_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          NOTARIZE_ID: ${{ secrets.APPLE_ID }}
+          NOTARIZE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          NOTARIZE_TEAM: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          if [ "$RUNNER_OS" = Windows ] && [ -n "$WIN_CERT" ]; then
+            export WIN_CSC_LINK="$WIN_CERT" WIN_CSC_KEY_PASSWORD="$WIN_CERT_PASSWORD"
+            echo "Signing the Windows app and installer"
+          fi
+          if [ "$RUNNER_OS" = macOS ] && [ -n "$MAC_CERT" ]; then
+            export CSC_LINK="$MAC_CERT" CSC_KEY_PASSWORD="$MAC_CERT_PASSWORD"
+            echo "Signing the macOS app"
+            if [ -n "$NOTARIZE_ID" ]; then
+              export APPLE_ID="$NOTARIZE_ID" APPLE_APP_SPECIFIC_PASSWORD="$NOTARIZE_PASSWORD" APPLE_TEAM_ID="$NOTARIZE_TEAM"
+              echo "...and notarizing it"
+            fi
+          else
+            export CSC_IDENTITY_AUTO_DISCOVERY=false # no certificate: don't look for one in the keychain
+          fi
           npm ci
           npm run ${{ (github.event_name == 'push' || inputs.publish) && 'release' || 'dist' }}
 

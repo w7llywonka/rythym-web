@@ -28,7 +28,7 @@
   "build": {
     "appId": "com.linerush.game",
     "productName": "Line Rush",
-    "copyright": "Line Rush",
+    "copyright": "Copyright © 2026 Line Rush",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -63,7 +63,22 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "Line-Rush-Setup-${version}.${ext}"
+      "artifactName": "Line-Rush-Setup-${version}.${ext}",
+      "include": "build/installer.nsh",
+      "license": "build/installer/license.txt",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/uninstallerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp",
+      "shortcutName": "Line Rush",
+      "uninstallDisplayName": "Line Rush",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "multiLanguageInstaller": false,
+      "installerLanguages": [
+        "en_US"
+      ]
     },
     "mac": {
       "target": [
@@ -82,15 +97,52 @@
       ],
       "category": "public.app-category.music-games"
     },
+    "dmg": {
+      "title": "Line Rush",
+      "background": "build/dmg-background.png",
+      "window": {
+        "width": 540,
+        "height": 380
+      },
+      "iconSize": 96,
+      "contents": [
+        {
+          "x": 150,
+          "y": 200,
+          "type": "file"
+        },
+        {
+          "x": 390,
+          "y": 200,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
     "linux": {
       "target": [
         "AppImage",
         "deb"
       ],
-      "category": "Game",
+      "category": "Game;ArcadeGame",
+      "icon": "build/icons",
+      "synopsis": "Two-button rhythm game",
+      "description": "Two buttons. Real beats. A two-lane rhythm game with online leaderboards, 1v1 battles and charts for your own music.",
       "maintainer": "Line Rush",
-      "synopsis": "Two-lane rhythm game",
-      "syncDesktopName": true
+      "vendor": "Line Rush",
+      "syncDesktopName": true,
+      "desktop": {
+        "entry": {
+          "Name": "Line Rush",
+          "GenericName": "Rhythm Game",
+          "Keywords": "rhythm;music;beat;game;arcade;",
+          "StartupWMClass": "line-rush"
+        }
+      }
+    },
+    "deb": {
+      "packageCategory": "games",
+      "priority": "optional"
     },
     "publish": [
       {

@@ -129,11 +129,24 @@ npm run app        # build the game and open it in the app (first: npm --prefix 
 npm run app:dist   # make an installer for this computer in desktop/release/
 ```
 
-**Releases:** `.github/workflows/desktop.yml` builds the Windows installer, the macOS dmg and the Linux AppImage / deb. Bump `version` in `desktop/package.json` and push it to main (or push a tag like `v1.0.1`), and the installers are published to the GitHub Release `v<version>`, which installed apps update from. Run the workflow by hand to just get the installers as downloads. macOS builds aren't code-signed, so the first launch needs right-click → Open.
+**Releases:** `.github/workflows/desktop.yml` builds the Windows installer, the macOS dmg and the Linux AppImage / deb. Bump `version` in `desktop/package.json` and push it to main (or push a tag like `v1.0.1`), and the installers are published to the GitHub Release `v<version>`, which installed apps update from. Run the workflow by hand to just get the installers as downloads. Unless you add signing (below), macOS builds aren't code-signed, so the first launch needs right-click → Open.
+
+**The installers:**
+- **Windows**: a setup wizard in the game's colors that greets the player by their Windows name ("Hey Will, welcome to Line Rush!", or "Welcome back" with what's changing when it's already installed). It shows a short, friendly license, lets you pick the folder, adds desktop and Start menu shortcuts, makes the Songs folder (with a note on how it works) and ends with **Play Line Rush now** and a link to what's new. The uninstaller says that scores, settings and songs stay. Updates install silently, with no pages.
+- **macOS**: a dmg whose window shows where to drag Line Rush (into Applications).
+- **Linux**: a deb (listed under Games, with the icon at every size) and an AppImage.
+
+The art (the wizard's sidebars and header, the dmg background, the Linux icons) is drawn by `desktop/build/installer-art/make.py` (Python + Pillow): run it again after changing it. The wizard's pages and words are in `desktop/build/installer.nsh`, its license page in `desktop/build/installer/license.txt`.
 
 **Settings for a build** (repository variables, or `desktop/app-config.json`):
 - `LINE_RUSH_SERVER`: the address of your online server (e.g. your Railway domain). Without it the app plays offline as a guest; players can also enter a server under APP.
 - `DISCORD_CLIENT_ID`: create an application at discord.com/developers (name it "Line Rush", and add the icon as a Rich Presence art asset called `logo`), then put its Application ID here.
+
+**Signing** is what makes the installers official to Windows and macOS. Signed, Windows names **Line Rush** as the verified publisher instead of "Unknown publisher" (SmartScreen can still warn about a new certificate until it has built up some reputation), and a signed and notarized Mac app opens without the "unidentified developer" warning. Add these repository secrets (Settings → Secrets and variables → Actions → Secrets) and the workflow signs on its own; without them it builds unsigned, as above:
+- Windows: `WIN_CSC_LINK` (your code signing certificate's .pfx file, base64-encoded) and `WIN_CSC_KEY_PASSWORD`.
+- macOS: `CSC_LINK` (a Developer ID Application certificate exported as .p12, base64-encoded) and `CSC_KEY_PASSWORD`. To notarize, also `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` (made at account.apple.com) and `APPLE_TEAM_ID`.
+
+Once a signed Windows version is out, keep signing: a signed app only installs updates signed by the same publisher.
 
 ## Songs
 
