@@ -14,11 +14,14 @@ import { packProgress, setTab } from './select.ts';
 import { game } from './services.ts';
 import { escapeHtml, go, onClick, queueToast, setAmbient, signed } from './shell.ts';
 import { S, bestKey, packOf, settings } from './state.ts';
+import { finishTutorial } from './tutorial.ts';
 import { vsBanner, vsFinal, vsLeaveResults, vsOnResults } from './versus.ts';
 
 /** called by the game when a run ends */
 export function finishRun(r: Run, cleared: boolean) {
   game.stop();
+  // the tutorial has its own end screen, and nothing from it counts (no bests, XP or stats)
+  if (r.opts?.tutorial) return finishTutorial(r);
   if (r.opts?.versus) vsFinal(r, cleared);
   void showResults(r, cleared);
 }

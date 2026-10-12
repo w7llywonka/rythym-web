@@ -379,6 +379,8 @@ export class Game {
   private completeHold(r: Run, lane: Lane, n: RunNote) {
     n.holding = false;
     r.holds[lane] = undefined;
+    // step() kept the lane lit while it was held: let it go dark with the hold
+    for (const p of ['rec.glow', 'beam']) fade($(`game.pf.lane${lane}.${p}`), 0, 0.25);
     const i = r.active[lane].indexOf(n);
     if (i >= 0) r.active[lane].splice(i, 1);
     const j = this.scoreHit(r, lane, 0);
@@ -389,6 +391,7 @@ export class Game {
   private failHold(r: Run, lane: Lane, n: RunNote, t: number) {
     n.holding = false;
     r.holds[lane] = undefined;
+    for (const p of ['rec.glow', 'beam']) fade($(`game.pf.lane${lane}.${p}`), 0, 0.25);
     n.removeAt = t + 0.25 * r.rate;
     this.fadeMissed(n);
     this.flashReceptor(lane, T.red);
