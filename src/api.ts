@@ -28,7 +28,8 @@ export interface VsMatch {
 export type VsEvent = { type: 'declined'; by: string } | { type: 'react'; i: number } | { type: 'opponentDone'; score: number } | { type: 'forfeit' } | { type: 'start'; matchId: string };
 export interface VsPoll {
   now: number; match: VsMatch | null; events: VsEvent[];
-  incoming: { from: string; songId: string; diff: string; expiresIn: number } | null;
+  /** a challenge waiting for you, with the challenger's tag / name color */
+  incoming: { from: string; songId: string; diff: string; expiresIn: number; tag?: string; color?: string } | null;
   online?: { name: string; busy: boolean; tag?: string; color?: string }[];
 }
 export interface ApiResult<T> { ok: boolean; status: number; data?: T; error?: string }

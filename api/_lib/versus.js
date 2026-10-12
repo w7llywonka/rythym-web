@@ -3,15 +3,17 @@
 //
 // Everything lives in Redis with expiry times, so nothing needs cleaning up by hand:
 //   online                  sorted set of usernames, scored by their last heartbeat (ms)
-//   vs:invite:{user}        the one pending challenge for a player (20 s)
+//   vs:invite:{user}        the one pending challenge for a player (20 s), with the challenger's tag / color
 //   vs:busy:{user}          the match a player is in
-//   vs:match:{id}           who / what / when (never changes after it's created)
+//   vs:match:{id}           who / what / when, and what both wore (never changes after it's created)
 //   vs:prog:{id}:{user}     latest live score of each player
 //   vs:final:{id}:{user}    final score (written once)
 //   vs:forfeit:{id}         who gave up
 //   vs:inbox:{user}         small events: declined, reactions, opponent finished...
 import { randomBytes } from 'node:crypto';
 import { SONGS, chartExists, maxScore } from './catalog.js';
+import { cleanLook, lookKeys, parseLook } from './online.js';
+import { cleanNameColor, cleanTag } from '../../shared/cosmetics.js';
 
 const ONLINE_MS = 25_000; // a player counts as online if they've polled in this window
 const INVITE_SECONDS = 20;
@@ -61,6 +63,7 @@ export function versusRoutes(store, { now, limit, requireSession, HttpError }) {
     return {
       id: m.id, songId: m.songId, diff: m.diff, startAt: m.startAt, endBy: m.endBy,
       opponent: m.al === lower ? m.b : m.a,
+      opponentLook: cleanLook(m.al === lower ? m.bLook : m.aLook),
       opp: parse(oppProg), oppDone: theirs ? theirs.score : null, result,
     };
   }
@@ -84,7 +87,10 @@ export function versusRoutes(store, { now, limit, requireSession, HttpError }) {
     if (invite && t - invite.at > INVITE_SECONDS * 1000) invite = null;
     const out = {
       now: t,
-      incoming: invite ? { from: invite.from, songId: invite.songId, diff: invite.diff, expiresIn: Math.max(0, invite.at + INVITE_SECONDS * 1000 - t) } : null,
+      incoming: invite ? {
+        from: invite.from, songId: invite.songId, diff: invite.diff, expiresIn: Math.max(0, invite.at + INVITE_SECONDS * 1000 - t),
+        tag: cleanTag(invite.tag), color: cleanNameColor(invite.color),
+      } : null,
       match: null,
       events: (await store.drain(`vs:inbox:${lower}`)).map(parse).filter(Boolean),
       online: undefined,
@@ -94,8 +100,12 @@ export function versusRoutes(store, { now, limit, requireSession, HttpError }) {
     if (m) out.match = await view(m, lower);
     if (query.lobby === '1') {
       const names = (await store.zrangebyscore('online', t - ONLINE_MS, '+inf')).filter(n => n.toLowerCase() !== lower).slice(-50).reverse();
-      const busyFlags = await store.mget(...names.map(n => `vs:busy:${n.toLowerCase()}`));
-      out.online = names.map((n, i) => ({ name: n, busy: !!busyFlags[i] }));
+      // busy flags, then looks, in one round trip
+      const flat = await store.mget(...names.map(n => `vs:busy:${n.toLowerCase()}`), ...names.map(n => `look:${n.toLowerCase()}`));
+      out.online = names.map((n, i) => {
+        const { tag, color } = parseLook(flat[names.length + i]);
+        return { name: n, busy: !!flat[i], tag, color };
+      });
     }
     return out;
   }
@@ -118,9 +128,10 @@ export function versusRoutes(store, { now, limit, requireSession, HttpError }) {
       if (!target) throw new HttpError(404, "That player isn't online anymore.");
       const tl = target.toLowerCase();
       if (tl === lower) throw new HttpError(400, "You can't challenge yourself.");
-      const [b1, b2] = await store.mget(`vs:busy:${lower}`, `vs:busy:${tl}`);
+      const [b1, b2, myLook] = await store.mget(`vs:busy:${lower}`, `vs:busy:${tl}`, `look:${lower}`);
       if (b1 || b2) throw new HttpError(409, 'Someone is already in a battle.');
-      const invite = { from: name, fromLower: lower, songId, diff, at: now() };
+      const { tag, color } = parseLook(myLook);
+      const invite = { from: name, fromLower: lower, songId, diff, at: now(), tag, color };
       if (!(await store.set(`vs:invite:${tl}`, JSON.stringify(invite), { ex: INVITE_SECONDS, nx: true }))) {
         throw new HttpError(409, `${target} already has a challenge waiting.`);
       }
@@ -140,7 +151,7 @@ export function versusRoutes(store, { now, limit, requireSession, HttpError }) {
         await push(invite.fromLower, { type: 'declined', by: name });
         return { body: { ok: true } };
       }
-      const [b1, b2] = await store.mget(`vs:busy:${lower}`, `vs:busy:${invite.fromLower}`);
+      const [b1, b2, ...looks] = await store.mget(`vs:busy:${lower}`, `vs:busy:${invite.fromLower}`, ...lookKeys(invite.fromLower), ...lookKeys(lower));
       if (b1 || b2) throw new HttpError(409, 'Someone is already in a battle.');
       const song = SONGS.get(invite.songId);
       const startAt = now() + START_DELAY_MS;
@@ -150,6 +161,7 @@ export function versusRoutes(store, { now, limit, requireSession, HttpError }) {
         id: randomBytes(12).toString('base64url'),
         a: invite.from, al: invite.fromLower, b: name, bl: lower,
         songId: invite.songId, diff: invite.diff, startAt, endBy,
+        aLook: parseLook(looks[0], looks[1]), bLook: parseLook(looks[2], looks[3]),
       };
       await store.set(`vs:match:${m.id}`, JSON.stringify(m), { ex: ttl });
       await store.set(`vs:busy:${m.al}`, m.id, { ex: ttl });

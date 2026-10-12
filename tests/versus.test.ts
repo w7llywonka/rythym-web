@@ -9,7 +9,8 @@ const PASS = 'amber-signal-63-river';
 
 function setup() {
   let clock = 1_800_000_000_000;
-  const handle = createAuth(memoryStore(), { scrypt: { N: 1024, r: 8, p: 1 }, now: () => clock });
+  const store = memoryStore();
+  const handle = createAuth(store, { scrypt: { N: 1024, r: 8, p: 1 }, now: () => clock });
   let ip = 0;
   const player = async (username: string) => {
     let cookie = '';
@@ -27,7 +28,7 @@ function setup() {
     assert.equal((await call('POST', 'auth/register', { username, password: PASS })).status, 201);
     return { call, poll: (q: Record<string, string> = {}) => call('GET', 'versus/poll', undefined, q) };
   };
-  return { player, tick: (ms: number) => { clock += ms; }, now: () => clock };
+  return { player, tick: (ms: number) => { clock += ms; }, now: () => clock, store };
 }
 
 test('challenge, accept, live scores, reactions and a winner', async () => {
@@ -37,7 +38,7 @@ test('challenge, accept, live scores, reactions and a winner', async () => {
 
   // the lobby lists other online players, not yourself
   const lobby = await alice.poll({ lobby: '1' });
-  assert.deepEqual(lobby.body.online, [{ name: 'bob_vs', busy: false }]);
+  assert.deepEqual(lobby.body.online, [{ name: 'bob_vs', busy: false, tag: '', color: '' }]);
 
   let r = await alice.call('POST', 'versus/challenge', { to: 'BOB_VS', songId: 'current', diff: 'Expert' });
   assert.equal(r.status, 200);
@@ -162,4 +163,39 @@ test('1v1 scores are capped at what the chart allows', async () => {
   await alice.call('POST', 'versus/final', { matchId: match.id, score: 99_999_999, cleared: true });
   const r = await bob.call('POST', 'versus/final', { matchId: match.id, score: 1000, cleared: true });
   assert.equal(r.body.match.result.them, max);
+});
+
+test('players show their tag and name color in the lobby, the challenge and the battle', async () => {
+  const { player, store } = setup();
+  const ann = await player('ann_look'), ben = await player('ben_look'), cal = await player('cal_look');
+  await ann.call('POST', 'profile/look', { title: 'Rookie', tag: 'veteran', color: 'gold' });
+  await ben.call('POST', 'profile/look', { tag: 'duelist', color: 'not-a-color' });
+  await store.set('title:cal_look', 'Old Timer'); // from before looks: no tag or color
+  await ann.poll(); await ben.poll(); await cal.poll();
+
+  const lobby = (await cal.poll({ lobby: '1' })).body.online;
+  assert.deepEqual(lobby, [
+    { name: 'ben_look', busy: false, tag: 'duelist', color: '' },
+    { name: 'ann_look', busy: false, tag: 'veteran', color: 'gold' },
+  ]);
+
+  // the challenge pop-up knows who's asking
+  await ann.call('POST', 'versus/challenge', { to: 'ben_look', songId: 'current', diff: 'Expert' });
+  const incoming = (await ben.poll()).body.incoming;
+  assert.deepEqual([incoming.from, incoming.tag, incoming.color], ['ann_look', 'veteran', 'gold']);
+
+  // each side sees what the other wore when the battle started
+  const match = (await ben.call('POST', 'versus/respond', { from: 'ann_look', accept: true })).body.match;
+  assert.deepEqual(match.opponentLook, { title: 'Rookie', tag: 'veteran', color: 'gold' });
+  await ben.call('POST', 'profile/look', { tag: 'champion' });
+  assert.deepEqual((await ann.poll()).body.match.opponentLook, { title: '', tag: 'duelist', color: '' });
+  const live = await ann.call('POST', 'versus/progress', { matchId: match.id, score: 10, combo: 1, health: 100, accuracy: 100 });
+  assert.equal(live.body.match.opponentLook.tag, 'duelist');
+
+  // anything odd in the store comes out as nothing
+  await store.set('look:cal_look', JSON.stringify({ tag: '<b>x</b>', color: 'javascript:alert(1)' }));
+  await store.set('vs:invite:cal_look', JSON.stringify({ from: 'ann_look', fromLower: 'ann_look', songId: 'current', diff: 'Hard', at: 1_800_000_000_000, tag: '"><img>', color: 'red' }));
+  assert.deepEqual((await ann.poll({ lobby: '1' })).body.online.find((p: { name: string }) => p.name === 'cal_look'), { name: 'cal_look', busy: false, tag: '', color: '' });
+  const odd = (await cal.poll()).body.incoming;
+  assert.deepEqual([odd.tag, odd.color], ['', '']);
 });
