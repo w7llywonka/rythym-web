@@ -3,20 +3,63 @@
 //
 //   lb:{song}:{diff}     sorted set: username -> best score on that chart
 //   wk:{week}            sorted set: username -> best weekly-challenge score (kept 5 weeks)
-//   title:{user}         the title a player wears on the boards
+//   look:{user}          what a player wears online: { title, tag, color } (kept 400 days)
+//   title:{user}         the old title-only key, read when there's no look yet (no longer written)
 //   boards:{user}        set of boards a player is on (so deleting an account removes them)
 //   feed                 newest-first list of big plays (structured, the client renders it safely)
 import { DIFF_LABEL, RANK, SONGS, chartExists, maxScore } from './catalog.js';
 import { currentWeek, pickWeekly } from '../../shared/weekly.js';
+import { cleanNameColor, cleanTag } from '../../shared/cosmetics.js';
 
 const TOP = 10;
 const FEED_KEEP = 20;
 const FEED_SHOW = 8;
 const WEEK_TTL = 35 * 86400;
+const LOOK_TTL = 400 * 86400;
 
 const chartKey = (songId, diff) => `lb:${songId}:${diff}`;
 const weekKey = week => `wk:${week}`;
 const cleanTitle = t => (typeof t === 'string' ? t.replace(/[^\w !'&.-]/g, '').slice(0, 24) : '');
+
+// ---- looks: tags and name colors are ids from shared/cosmetics.js, anything else becomes '' ----------
+const CLEAN = { title: cleanTitle, tag: cleanTag, color: cleanNameColor };
+const LOOK_FIELDS = Object.keys(CLEAN);
+
+/** @returns {{ title: string, tag: string, color: string }} */
+export const cleanLook = l => ({ title: cleanTitle(l?.title), tag: cleanTag(l?.tag), color: cleanNameColor(l?.color) });
+/** the two keys to mget for a player's look (lowercase name): the look, then the old title */
+export const lookKeys = lower => [`look:${lower}`, `title:${lower}`];
+/** a stored look (checked again on the way out), or the old title alone */
+export function parseLook(raw, legacyTitle) {
+  let l = null;
+  try { l = raw ? JSON.parse(raw) : null; } catch { /* unreadable: treat as missing */ }
+  return cleanLook(l && typeof l === 'object' ? l : { title: legacyTitle });
+}
+/** looks for many players (lowercase names) in one round trip */
+export async function readLooks(store, lowers) {
+  const flat = await store.mget(...lowers.flatMap(lookKeys));
+  return lowers.map((_, i) => parseLook(flat[2 * i], flat[2 * i + 1]));
+}
+/**
+ * Saves what a request asks for: a field that's absent keeps its stored value, '' (or anything that
+ * isn't allowed) clears it. Only reads the stored look when it needs it.
+ */
+export async function saveLook(store, lower, body) {
+  const given = LOOK_FIELDS.filter(f => Object.hasOwn(body, f));
+  let look = cleanLook(null);
+  if (given.length < LOOK_FIELDS.length) [look] = await readLooks(store, [lower]);
+  for (const f of given) look[f] = CLEAN[f](body[f]);
+  await store.set(`look:${lower}`, JSON.stringify(look), { ex: LOOK_TTL });
+  return look;
+}
+
+/** a stored feed line as sent to players (lines from before tags have none) */
+function feedItem(raw) {
+  let i = null;
+  try { i = JSON.parse(raw); } catch { return null; }
+  if (!i || typeof i !== 'object') return null;
+  return { kind: i.kind, user: i.user, song: i.song, diff: i.diff, at: i.at, tag: cleanTag(i.tag), color: cleanNameColor(i.color) };
+}
 
 /**
  * @param {object} store
@@ -25,8 +68,8 @@ const cleanTitle = t => (typeof t === 'string' ? t.replace(/[^\w !'&.-]/g, '').s
 export function onlineRoutes(store, { now, limit, requireSession, optionalSession, HttpError }) {
   async function board(key, session) {
     const top = await store.ztop(key, TOP);
-    const titles = await store.mget(...top.map(e => `title:${e.member.toLowerCase()}`));
-    const entries = top.map((e, i) => ({ rank: i + 1, name: e.member, title: titles[i] ?? '', score: e.score }));
+    const looks = await readLooks(store, top.map(e => e.member.toLowerCase()));
+    const entries = top.map((e, i) => ({ rank: i + 1, name: e.member, ...looks[i], score: e.score }));
     const mine = session ? await store.zrankOf(key, session.user.username) : null;
     return { entries, mine };
   }
@@ -50,7 +93,7 @@ export function onlineRoutes(store, { now, limit, requireSession, optionalSessio
         const score = Math.floor(Number(req.body.score));
         if (!Number.isFinite(score) || score < 0 || score > maxScore(songId, diff)) throw new HttpError(400, 'That score is not possible on this chart.');
         if (!(await store.set(`cooldown:submit:${lower}`, '1', { ex: 3, nx: true }))) throw new HttpError(429, 'Slow down a little.');
-        await store.set(`title:${lower}`, cleanTitle(req.body.title), { ex: 400 * 86400 });
+        const look = await saveLook(store, lower, req.body);
 
         const song = SONGS.get(songId);
         const chart = await submit(chartKey(songId, diff), name, lower, score);
@@ -72,7 +115,8 @@ export function onlineRoutes(store, { now, limit, requireSession, optionalSessio
 
         // one feed line per player per 15 s
         if (message && await store.set(`cooldown:feed:${lower}`, '1', { ex: 15, nx: true })) {
-          await store.lpushCapped('feed', JSON.stringify({ kind: message, user: name, song: song.title, diff: DIFF_LABEL[diff], at: now() }), FEED_KEEP);
+          const item = { kind: message, user: name, song: song.title, diff: DIFF_LABEL[diff], at: now(), tag: look.tag, color: look.color };
+          await store.lpushCapped('feed', JSON.stringify(item), FEED_KEEP);
         }
         return { body: { ok: true, chart, weekly: week } };
       },
@@ -89,8 +133,16 @@ export function onlineRoutes(store, { now, limit, requireSession, optionalSessio
       },
 
       'GET scores/feed': async () => {
-        const items = (await store.lrange('feed', FEED_SHOW)).map(raw => { try { return JSON.parse(raw); } catch { return null; } }).filter(Boolean);
+        const items = (await store.lrange('feed', FEED_SHOW)).map(feedItem).filter(Boolean);
         return { body: { items } };
+      },
+
+      // what you wear on the boards, the feed and in 1v1
+      'POST profile/look': async req => {
+        const s = await requireSession(req);
+        const lower = s.user.username.toLowerCase();
+        await limit(`look:${lower}`, 30, 600, 'Changing your look too often. Try again in a few minutes.');
+        return { body: { ok: true, look: await saveLook(store, lower, req.body) } };
       },
     },
 
@@ -98,7 +150,7 @@ export function onlineRoutes(store, { now, limit, requireSession, optionalSessio
     async forget(name) {
       const lower = name.toLowerCase();
       for (const key of await store.smembers(`boards:${lower}`)) await store.zrem(key, name);
-      await store.del(`boards:${lower}`, `title:${lower}`);
+      await store.del(`boards:${lower}`, ...lookKeys(lower));
     },
   };
 }

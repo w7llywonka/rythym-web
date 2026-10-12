@@ -46,6 +46,7 @@ Perfect, Great and Good score 300/200/100. Combos of 10/25/50 give ×2/×3/×4. 
 - **Leaderboards**: every built-in chart has a global top 10 (TOP 10 on the song panel) with your own best and rank. Finishing a ranked run posts your score; the results screen shows your worldwide rank. Scores above what the chart allows are rejected.
 - **King of the Hill**: the weekly challenge has its own board; #1 is the King, shown on the home screen.
 - **Live feed**: new #1s, SS ranks, full combos on Expert+ and new Kings show up for everyone on the home screen.
+- **Tags and name colors**: the tag and name color you unlock in the game (and wear from the Locker) show next to your name on the leaderboards (with your title), in the live feed and in 1v1. The server only keeps ids from the game's own list (`shared/cosmetics.js`), never text a player typed.
 
 ## Accounts
 
@@ -70,7 +71,7 @@ How it's kept secure (`api/_lib/core.js`):
   - 20 logins per IP per 15 minutes
   - 8 wrong passwords per account per 15 minutes
   - 5 sign-ups per IP per hour
-  - limits on password changes and saves
+  - limits on password changes, saves, scores and look changes (title, tag, name color)
 - **Headers:** a strict Content-Security-Policy, HSTS, `X-Frame-Options: DENY`, `nosniff` and `no-referrer` (see `vercel.json`). API responses are never cached.
 
 ### Turning accounts on
