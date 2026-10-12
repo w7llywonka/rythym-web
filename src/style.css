@@ -93,7 +93,8 @@ button.f:focus-visible { outline: 2px solid rgba(43, 212, 255, .7); outline-offs
 .dimmer { transition: opacity .2s; opacity: 0; pointer-events: none; }
 .dimmer.on { opacity: .72; pointer-events: auto; }
 .fader { opacity: 0; transition: opacity .15s; }
-.toast { box-shadow: 0 0 0 1px #25252E, 0 12px 40px rgba(0, 0, 0, .5); }
+/* a toast never takes a click meant for what's under it; it moves up on results (shell.ts showScreen) */
+.toast { box-shadow: 0 0 0 1px #25252E, 0 12px 40px rgba(0, 0, 0, .5); pointer-events: none; transition: top .25s; }
 
 /* playfield */
 .heldbeam { opacity: 0; transition: opacity .06s; }
@@ -327,6 +328,10 @@ button.f:focus-visible { outline: 2px solid rgba(43, 212, 255, .7); outline-offs
 .np-grad { -webkit-background-clip: text; background-clip: text; color: transparent !important; }
 /* a title after the name gives way first when there's no room */
 .np-extra { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8A8A97; font-weight: 500; font-size: .87em; }
+/* a nameplate with something after it that always shows (the King of the Hill's score): the name gives way */
+.t.np-row .tx { display: flex; align-items: center; min-width: 0; }
+.np-row .np { flex: 0 1 auto; }
+.np-after { flex: none; margin-left: .28em; }
 
 /* NEW counts on the PROFILE / LOCKER buttons */
 .lk-badge { box-shadow: 0 0 0 2px #08080A, 0 0 14px rgba(255, 92, 168, .6); pointer-events: none; letter-spacing: 0 !important; }
@@ -370,7 +375,8 @@ button.f:focus-visible { outline: 2px solid rgba(43, 212, 255, .7); outline-offs
 }
 .lk-card[data-state=locked] .lk-prev > :not(.lk-lock) { filter: grayscale(1); opacity: .32; }
 .lk-card[data-state=locked] .lk-prev .p { animation-play-state: paused; }
-.lk-lock { position: absolute; right: 5px; top: 5px; width: 20px; height: 20px; border-radius: 6px; display: none; align-items: center; justify-content: center; color: #8A8A97; background: rgba(29, 29, 37, .9); }
+/* tight in the corner, so it stays clear of a one-line preview (your nameplate, a title) */
+.lk-lock { position: absolute; right: 4px; top: 4px; width: 16px; height: 16px; border-radius: 5px; display: none; align-items: center; justify-content: center; color: #8A8A97; background: rgba(29, 29, 37, .9); }
 .lk-card[data-state=locked] .lk-lock { display: flex; }
 .lk-name { position: absolute; left: 14px; right: 12px; top: 69px; font-size: 13px; font-weight: 700; letter-spacing: .02em; line-height: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lk-card[data-state=locked] .lk-name { color: #8A8A97; }
@@ -399,7 +405,8 @@ button.f:focus-visible { outline: 2px solid rgba(43, 212, 255, .7); outline-offs
   color: #F5C451; font-size: 13px; font-weight: 700; letter-spacing: .07em; line-height: 1.2; text-align: center;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-shadow: 0 0 18px rgba(245, 196, 81, .4);
 }
-.lk-tag .np-tag { font-size: 10px; }
+/* 10px at the preview's 15px, and it shrinks with the name when locker.ts fitPlates steps it down */
+.lk-tag .np-tag { font-size: .67em; }
 .lk-pv-skin { display: flex; gap: 8px; height: 100%; }
 .lk-lane { position: relative; width: 50px; height: 100%; background: linear-gradient(180deg, rgba(29, 29, 37, 0), #1D1D25); }
 .lk-pv-theme { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }

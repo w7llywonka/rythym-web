@@ -13,6 +13,8 @@ export function showScreen(name: Screen) {
   for (const s of ['home', 'select', 'game', 'results'] as Screen[]) show($(s), s === name);
   S.screen = name;
   if (name === 'home') applyTheme();
+  // on results the toast sits above the button row (RETRY, CONTINUE, NEW IN YOUR LOCKER), not over it
+  $('toast').style.top = name === 'results' ? '540px' : 'calc(100% - 24px)';
 }
 
 /** the home screen's glow in the menu theme (Settings → Visuals, or the Locker) */

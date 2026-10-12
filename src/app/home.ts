@@ -61,7 +61,7 @@ export function refreshWeekly() {
   void api.weeklyBoard().then(res => {
     if (!res.ok || !res.data) return txt($('home.weekly.king'), "Couldn't load the board");
     const [king] = res.data.entries;
-    if (king) html($('home.weekly.king'), `${nameplateHtml(king.name, king)}<span style="color:${T.muted}">  ·  ${formatNumber(king.score)}</span>`);
+    if (king) html($('home.weekly.king'), `${nameplateHtml(king.name, king)}<span class="np-after" style="color:${T.muted}">  ·  ${formatNumber(king.score)}</span>`);
     else txt($('home.weekly.king'), 'Nobody yet. Claim it!');
     const mine = res.data.mine;
     txt($('home.weekly.mine'), mine ? `Your best: ${formatNumber(mine.score)}  ·  #${mine.rank}` : local ? `Your best: ${formatNumber(local)}` : '');
@@ -115,6 +115,8 @@ export function initHome() {
   onClick('home.settings', openSettings);
   // your chip opens your profile
   $('home.chip').classList.add('lk-chip');
+  // the king's score always shows; a long name gives way
+  $('home.weekly.king').classList.add('np-row');
   onClick('home.chip', () => { if (!S.transitioning) openProfile(); });
   onClick('home.weekly.board', () => { if (weekly) openWeeklyBoard(weekly.track.title, weekly.week); });
   onClick('home.weekly.play', () => {

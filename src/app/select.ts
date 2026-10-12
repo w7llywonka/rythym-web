@@ -3,7 +3,7 @@
 import { K, MODES, STAR_COLORS, T, TAB_INFO, TAB_ORDER, type Pack, type Tab } from '../config.ts';
 import { importSong, retimeImport } from '../custom.ts';
 import { currentSet, fmtTime, formatNumber, gradeColor, setMultiplier, setSummary } from '../scoring.ts';
-import { dropImportProgress } from '../storage.ts';
+import { dropImportProgress, fromOlderSave } from '../storage.ts';
 import { trackFromImport } from '../tracks.ts';
 import type { Track } from '../types.ts';
 import { $, rgba, show, txt } from '../ui.ts';
@@ -305,8 +305,11 @@ async function restoreImports() {
 /**
  * Songs imported before imports were counted still count: the import count is at least the number of
  * songs imported on this computer (called once they're restored, and when an account's save loads).
+ * Only for the guest save, or as a one-time catch-up for a save from before 1.1: an account that
+ * already counts its own imports never takes on what someone else imported on this computer.
  */
 export function creditImports() {
+  if (S.account && !fromOlderSave(S.data)) return;
   const p = S.data.profile;
   const here = S.tracks.filter(t => t.custom).length;
   if (p.imports >= here) return;

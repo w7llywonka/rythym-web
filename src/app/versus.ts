@@ -33,10 +33,11 @@ const vs = {
   answered: '',
   /** the last match given up here, so a poll that's in flight can't pull us back in */
   left: '',
-  incoming: null as { from: string; songId: string; diff: string; expiresAt: number } | null,
+  /** `look`: the challenger's tag and name color as the server sent them with the invite (null: an older server) */
+  incoming: null as { from: string; songId: string; diff: string; expiresAt: number; look: Look | null } | null,
   current: null as { matchId: string; opponent: string; oppScore: number; result: VsMatch['result']; look: Look | null } | null,
 };
-/** tags / name colors of players seen in the lobby (so the challenge pop-up can show the challenger's) */
+/** tags / name colors of players seen in the lobby (for a challenge or match that came without one) */
 const looks = new Map<string, Look>();
 const lookOf = (name: string) => looks.get(name.toLowerCase()) ?? null;
 /** the pop-up's song, downloading / decoding: ACCEPT waits for it */
@@ -100,7 +101,7 @@ function showPopup() {
   const box = $('challenge');
   if (!inc) { show(box, false); return; }
   const t = S.tracksById.get(inc.songId);
-  html($('challenge.text'), `${nameplateHtml(inc.from, lookOf(inc.from))} wants to battle on <b>${escapeHtml(t?.title ?? '?')}</b> [${MODES[inc.diff as Diff]?.label ?? ''}]`);
+  html($('challenge.text'), `${nameplateHtml(inc.from, inc.look ?? lookOf(inc.from))} wants to battle on <b>${escapeHtml(t?.title ?? '?')}</b> [${MODES[inc.diff as Diff]?.label ?? ''}]`);
   // accepting starts the battle ~6 s later, so the song has to be here first
   const ready = prep.ready(keyOf(inc));
   const accept = $('challenge.accept') as HTMLButtonElement;
@@ -199,7 +200,8 @@ function apply(d: VsPoll, sentAt: number) {
   vs.offset = vs.offset === 0 ? sample : vs.offset * 0.8 + sample * 0.2;
   const inc = d.incoming;
   if (inc && !vs.current && keyOf(inc) !== vs.answered) {
-    vs.incoming = { from: inc.from, songId: inc.songId, diff: inc.diff, expiresAt: Date.now() + inc.expiresIn };
+    const look = inc.tag !== undefined || inc.color !== undefined ? { tag: inc.tag ?? '', color: inc.color ?? '' } : null;
+    vs.incoming = { from: inc.from, songId: inc.songId, diff: inc.diff, expiresAt: Date.now() + inc.expiresIn, look };
     prepare(inc);
   } else if (!inc) {
     vs.incoming = null;
@@ -266,8 +268,7 @@ async function tick() {
         el.style.color = lead >= 0 ? T.green : T.red;
         next = 500;
       } else {
-        // the lobby list also while a challenge pop-up is up: it carries the challenger's tag and color
-        const res = await api.vsPoll({ lobby: isOpen('versus') || !!vs.incoming, match: vs.current && !vs.current.result ? vs.current.matchId : undefined });
+        const res = await api.vsPoll({ lobby: isOpen('versus'), match: vs.current && !vs.current.result ? vs.current.matchId : undefined });
         if (res.ok && res.data) apply(res.data, sentAt);
         else if (res.status === 401) signedOut();
         next = vs.current && !vs.current.result ? 1000 : isOpen('versus') || vs.incoming ? 2000 : 4000;

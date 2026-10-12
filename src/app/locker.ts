@@ -11,9 +11,9 @@ import { $, button, frame, has, label, node, panel, rgba, show, txt } from '../u
 import { refreshHome } from './home.ts';
 import { LOCKER_TABS, cardState, keysToMarkSeen, lockerCounts, ruleProgress, startTab } from './lockerView.ts';
 import { nameplateEl, renderNameplate } from './nameplate.ts';
-import { queueSave } from './save.ts';
+import { accountReady, queueSave } from './save.ts';
 import { audio } from './services.ts';
-import { closeModal, onClick, openModal, setAmbient } from './shell.ts';
+import { closeModal, isOpen, onClick, openModal, setAmbient } from './shell.ts';
 import { S, settings } from './state.ts';
 import {
   activeHitEffect, activeNoteStyle, activeTheme, allUnlockables, lookForServer, unlockStats, wornNameColor, wornTag,
@@ -22,19 +22,22 @@ import {
 
 const W = 880, H = 616;
 const TAB_W = 136;
-/** your name on the previews */
-const myName = () => S.account?.username ?? 'You';
+/** your name on your card and the previews (a guest is 'Guest', like on Home and in Profile) */
+const myName = () => S.account?.username ?? 'Guest';
 
 // ---- what the server shows next to your name ---------------------------------------------------
 let lookTimer: number | undefined;
-/** send what you wear to the server (debounced; it only takes ids it knows, and a failure is ignored) */
+/**
+ * send what you wear to the server (debounced; it only takes ids it knows, and a failure is ignored).
+ * Only once the account's own save has loaded: until then S.data is this browser's guest progress.
+ */
 export function syncLook(delay = 1500) {
   if (lookTimer) clearTimeout(lookTimer);
   lookTimer = undefined;
-  if (!S.account || S.accountsOffline) return;
+  if (!S.account || S.accountsOffline || !accountReady()) return;
   lookTimer = window.setTimeout(() => {
     lookTimer = undefined;
-    if (S.account) void api.setLook(lookForServer());
+    if (S.account && accountReady()) void api.setLook(lookForServer());
   }, delay);
 }
 
@@ -229,7 +232,7 @@ function renderMe() {
   const p = S.data.profile;
   renderNameplate($('locker.me.name'), myName(), lookForServer());
   const title = $('locker.me.title');
-  txt(title, p.title ? p.title.toUpperCase() : 'NO TITLE');
+  txt(title, p.title ? p.title.toUpperCase() : 'NO TITLE YET');
   title.style.color = p.title ? T.gold : T.dim;
   const skin = activeNoteStyle(), fx = activeHitEffect(), theme = activeTheme();
   txt($('locker.me.skin.value'), skin);
@@ -274,7 +277,22 @@ function showTab(cat: UnlockCategory, instant = false) {
   }
   grid.replaceChildren(holder);
   grid.scrollTop = 0;
+  fitPlates(holder);
   repaint();
+}
+
+/**
+ * a tag / name color preview shows your whole name: the nameplate steps down from 15 to 13 px until it
+ * fits its box (filling it means the name is cut). A name too long even then stays full size and cuts
+ * off, so the tag being shown doesn't shrink for nothing (and cards next to each other look alike).
+ */
+function fitPlates(holder: HTMLElement) {
+  for (const np of holder.querySelectorAll<HTMLElement>('.lk-prev > .np')) {
+    const box = np.parentElement!, cs = getComputedStyle(box);
+    const room = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const fits = [15, 14, 13].some(px => { np.style.fontSize = `${px}px`; return np.offsetWidth < room; });
+    if (!fits) np.style.fontSize = '';
+  }
 }
 
 /** pop + flash on the card and on you, and your hit sound */
@@ -315,16 +333,33 @@ function choose(u: Unlockable, card: HTMLElement) {
   if (!worn || u.category === 'title' || u.category === 'tag') celebrate(card, u.category);
 }
 
-/** opens on the first tab with something new (else the last one you looked at) */
-export function openLocker(cat?: UnlockCategory) {
+/** where closing goes: the panel it was opened from (Profile), else nowhere */
+let back: (() => void) | undefined;
+
+/** opens on the first tab with something new (else the last one you looked at); closing it reopens `from` */
+export function openLocker(cat?: UnlockCategory, from?: () => void) {
+  back = from;
   freshNow = new Set();
   const { byCat } = lockerCounts(allUnlockables(), unlockStats(), S.data.profile.seen);
   openModal($('locker'));
   showTab(cat ?? startTab(byCat, lastTab), true);
 }
 
+/** ✕ / Escape: back to Profile when it came from there (like Customize goes back to Settings) */
+function closeLocker() {
+  const to = back;
+  back = undefined;
+  if (to) to(); else closeModal();
+}
+
 export function initLocker() {
-  onClick('locker.close', closeModal);
+  onClick('locker.close', closeLocker);
+  // Escape goes the same way (the global Escape would only close it); capture runs before that one
+  window.addEventListener('keydown', e => {
+    if (e.code !== 'Escape' || !back || !isOpen('locker')) return;
+    e.stopImmediatePropagation();
+    closeLocker();
+  }, true);
   for (const t of LOCKER_TABS) onClick(`locker.tabs.${t.cat}`, () => { if (tab !== t.cat) showTab(t.cat); });
   for (const cat of ['skin', 'effect', 'theme'] as const) onClick(`locker.me.${cat}`, () => { if (tab !== cat) showTab(cat); });
 }
