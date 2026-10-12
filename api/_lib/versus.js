@@ -11,7 +11,7 @@
 //   vs:forfeit:{id}         who gave up
 //   vs:inbox:{user}         small events: declined, reactions, opponent finished...
 import { randomBytes } from 'node:crypto';
-import { SONGS, chartExists } from './catalog.js';
+import { SONGS, chartExists, maxScore } from './catalog.js';
 
 const ONLINE_MS = 25_000; // a player counts as online if they've polled in this window
 const INVITE_SECONDS = 20;
@@ -165,7 +165,8 @@ export function versusRoutes(store, { now, limit, requireSession, HttpError }) {
       const m = await getMatch(req.body.matchId, lower);
       if (!m) throw new HttpError(404, 'That battle is over.');
       const b = req.body;
-      const prog = { score: clampInt(b.score, 1e8), combo: clampInt(b.combo, 1e6), health: clampNum(b.health, 100), accuracy: clampNum(b.accuracy, 100) };
+      // no score above what the chart allows (the same cap as the leaderboards)
+      const prog = { score: clampInt(b.score, maxScore(m.songId, m.diff)), combo: clampInt(b.combo, 1e6), health: clampNum(b.health, 100), accuracy: clampNum(b.accuracy, 100) };
       await store.set(`vs:prog:${m.id}:${lower}`, JSON.stringify(prog), { ex: 900 });
       return { body: await poll(s, { match: m.id }) };
     },
@@ -187,7 +188,7 @@ export function versusRoutes(store, { now, limit, requireSession, HttpError }) {
       const { lower } = me(s);
       const m = await getMatch(req.body.matchId, lower);
       if (!m) throw new HttpError(404, 'That battle is over.');
-      const final = { score: clampInt(req.body.score, 1e8), cleared: req.body.cleared === true };
+      const final = { score: clampInt(req.body.score, maxScore(m.songId, m.diff)), cleared: req.body.cleared === true };
       if (await store.set(`vs:final:${m.id}:${lower}`, JSON.stringify(final), { ex: 900, nx: true })) {
         await push(m.al === lower ? m.bl : m.al, { type: 'opponentDone', score: final.score });
       }

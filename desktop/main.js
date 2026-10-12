@@ -7,7 +7,7 @@
 //  - screenshots with F12, music that starts without a click, no sleep while playing
 //  - logins kept in the OS keychain (safeStorage), automatic updates
 import { app, BrowserWindow, ipcMain, Menu, powerSaveBlocker, protocol, safeStorage, screen, session, shell } from 'electron';
-import { mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, watch, writeFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,14 +65,20 @@ const vault = {
       const bytes = enc ? safeStorage.encryptString(value.cookie) : Buffer.from(value.cookie, 'utf8');
       vaultData[origin] = { data: bytes.toString('base64'), enc, expires: value.expires };
     }
-    try { writeFileSync(vaultPath, JSON.stringify(vaultData), { mode: 0o600 }); } catch { /* keep it in memory */ }
+    try {
+      // write then rename, so a crash mid-write never loses the login file
+      writeFileSync(`${vaultPath}.tmp`, JSON.stringify(vaultData), { mode: 0o600 });
+      renameSync(`${vaultPath}.tmp`, vaultPath);
+    } catch { /* keep it in memory */ }
   },
 };
 
 const presence = createPresence({ clientId: config.discordClientId });
 let win = null;
 let sleepBlocker = null;
-let update = { state: 'none', version: '' };
+// none -> (macOS) available, or downloading -> ready; installs on quit or with RESTART TO UPDATE
+let update = { state: 'none', version: '', percent: 0 };
+const updatesOn = app.isPackaged && !process.env.LINE_RUSH_NO_UPDATES;
 
 function send(event) {
   if (win && !win.isDestroyed()) win.webContents.send('desktop:event', event);
@@ -147,19 +153,13 @@ function createWindow() {
   for (const [evt, on] of [['enter-full-screen', true], ['leave-full-screen', false]]) {
     win.on(evt, () => { prefs.fullscreen = on; savePrefsNow(); send({ type: 'fullscreen', on }); });
   }
-  // closing: the game writes its save first (up to 3 s), so a logged-in player's last run isn't lost
-  let closing = false;
+  saved = false;
   win.on('close', event => {
     remember();
     savePrefsNow();
-    if (closing) return;
+    if (saved) return;
     event.preventDefault();
-    closing = true;
-    const done = () => { clearTimeout(timer); ipcMain.removeHandler('desktop:ready-to-close'); if (win && !win.isDestroyed()) win.destroy(); };
-    const timer = setTimeout(done, 3000);
-    ipcMain.removeHandler('desktop:ready-to-close');
-    handle('desktop:ready-to-close', done);
-    send({ type: 'closing' });
+    saveThen(() => { if (win && !win.isDestroyed()) win.destroy(); });
   });
   win.on('closed', () => { win = null; });
 
@@ -169,15 +169,39 @@ function createWindow() {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith(`${ORIGIN}/`)) event.preventDefault();
+    if (!url.startsWith(`${ORIGIN}/`) || url.startsWith(`${ORIGIN}/api/`)) event.preventDefault();
   });
 
   void win.loadURL(`${ORIGIN}/`);
 }
 
+// ---- closing: the game writes its save first (up to 3 s), so a logged-in player's last run isn't lost
+let saved = false; // the save is written: the window may close
+let saving = null; // { then, timer } while waiting for it
+function saveThen(then) {
+  if (saving) return; // already on the way out
+  if (!win || win.isDestroyed()) { saved = true; then(); return; }
+  saving = { then, timer: setTimeout(saveDone, 3000) };
+  send({ type: 'closing' });
+}
+function saveDone() {
+  if (!saving) return;
+  const { then, timer } = saving;
+  clearTimeout(timer);
+  saving = null;
+  saved = true;
+  then();
+}
+
 // ---- messages from the game ----
+// only the game itself: the top frame of the app's window, on app://line-rush
 const fromGame = event => {
-  try { return new URL(event.senderFrame?.url ?? '').host === HOST; } catch { return false; }
+  const frame = event.senderFrame;
+  if (!win || win.isDestroyed() || event.sender !== win.webContents || !frame || frame.parent) return false;
+  try {
+    const url = new URL(frame.url);
+    return url.protocol === `${SCHEME}:` && url.host === HOST;
+  } catch { return false; }
 };
 const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) => {
   if (!fromGame(event)) throw new Error('not allowed');
@@ -195,6 +219,7 @@ function info() {
     discordAvailable: !!config.discordClientId,
     server: prefs.server,
     songsDir,
+    updates: updatesOn,
     update,
   };
 }
@@ -229,9 +254,17 @@ function registerIpc() {
     const bytes = await readSong(songsDir, name);
     return bytes ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) : null;
   });
+  handle('desktop:check-updates', checkUpdates);
+  // save, quit, install quietly and open the new version
   handle('desktop:install-update', () => {
-    if (update.state === 'ready') updater.autoUpdater.quitAndInstall();
+    if (update.state !== 'ready') return;
+    saveThen(() => {
+      updater.autoUpdater.quitAndInstall(true, true);
+      // still here: the installer didn't start, so closing later saves again
+      setTimeout(() => { saved = false; }, 10_000).unref?.();
+    });
   });
+  handle('desktop:ready-to-close', saveDone);
   // what's on screen: drives Discord status and keeps the display awake during a song
   ipcMain.on('desktop:activity', (event, a) => {
     if (!fromGame(event) || typeof a !== 'object' || a === null) return;
@@ -246,29 +279,58 @@ function registerIpc() {
   });
 }
 
-// new files in the Songs folder are picked up while the game runs
+// new files in the Songs folder (or its folders) are picked up while the game runs
 function watchSongs() {
   try {
     mkdirSync(songsDir, { recursive: true });
     let timer = null;
-    watch(songsDir, () => {
+    const changed = () => {
       clearTimeout(timer);
       timer = setTimeout(() => send({ type: 'songs-changed' }), 1500); // wait for copies to finish
-    }).on('error', () => {});
+    };
+    let watcher;
+    try { watcher = watch(songsDir, { recursive: true }, changed); } catch { watcher = watch(songsDir, changed); }
+    watcher.on('error', () => {});
   } catch { /* no Documents folder: the button still makes one */ }
 }
 
-// updates come from GitHub Releases. Windows / Linux install on quit; macOS builds aren't signed,
-// so there the game only says a new version is out and links to it.
-function checkUpdates() {
-  if (!app.isPackaged || process.env.LINE_RUSH_NO_UPDATES) return;
+// updates come from GitHub Releases. Windows / Linux download in the background and install on quit
+// (or right away with RESTART TO UPDATE); macOS builds aren't signed, so there the game only says a new
+// version is out and links to it. Checked at launch, every few hours, and with CHECK FOR UPDATES.
+const CHECK_EVERY_MS = 4 * 3600_000;
+function setUpdate(next) {
+  update = next;
+  send({ type: 'update', update });
+}
+
+/** @returns {Promise<'off' | 'busy' | 'latest' | 'found' | 'error'>} */
+async function checkUpdates() {
+  if (!updatesOn) return 'off';
+  if (update.state !== 'none') return 'busy';
+  try {
+    const result = await updater.autoUpdater.checkForUpdates();
+    result?.downloadPromise?.catch(() => {}); // a failed download is reported through 'error'
+    return result?.isUpdateAvailable ? 'found' : 'latest';
+  } catch { return 'error'; }
+}
+
+function startUpdates() {
+  if (!updatesOn) return;
   const { autoUpdater } = updater;
   autoUpdater.autoDownload = process.platform !== 'darwin';
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on('update-available', i => { update = { state: 'available', version: i.version }; send({ type: 'update', update }); });
-  autoUpdater.on('update-downloaded', i => { update = { state: 'ready', version: i.version }; send({ type: 'update', update }); });
-  autoUpdater.on('error', () => {});
-  void autoUpdater.checkForUpdates().catch(() => {});
+  autoUpdater.on('update-available', i => {
+    setUpdate({ state: autoUpdater.autoDownload ? 'downloading' : 'available', version: i.version, percent: 0 });
+  });
+  autoUpdater.on('download-progress', p => {
+    const percent = Math.max(0, Math.min(99, Math.floor(p.percent)));
+    if (update.state === 'downloading' && percent !== update.percent) setUpdate({ ...update, percent });
+  });
+  autoUpdater.on('update-downloaded', i => setUpdate({ state: 'ready', version: i.version, percent: 100 }));
+  // a failed download is tried again at the next check
+  autoUpdater.on('error', () => { if (update.state === 'downloading') setUpdate({ state: 'none', version: '', percent: 0 }); });
+  void checkUpdates();
+  setInterval(() => void checkUpdates(), CHECK_EVERY_MS).unref?.();
 }
 
 app.on('second-instance', () => {
@@ -298,7 +360,7 @@ app.whenReady().then(() => {
   createWindow();
   presence.setEnabled(prefs.discord);
   watchSongs();
-  checkUpdates();
+  startUpdates();
 
   app.on('activate', () => { if (!win) createWindow(); });
 });

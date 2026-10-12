@@ -66,7 +66,7 @@ How it's kept secure (`api/_lib/core.js`):
   - sessions last 30 days
   - changing the password logs out every other device
 - **CSRF and origin checks:** every API call must send an `X-LineRush` header, which other sites can't add, and a JSON body. Calls are refused when `Origin` or `Sec-Fetch-Site` show another site.
-- **Rate limits:**
+- **Rate limits** (the IP is the one the hosting proxy saw: the last `X-Forwarded-For` entry, so a made-up header doesn't get around them; behind more than one proxy, e.g. a CDN in front of Railway, set `TRUST_PROXY_HOPS` to how many):
   - 20 logins per IP per 15 minutes
   - 8 wrong passwords per account per 15 minutes
   - 5 sign-ups per IP per hour
@@ -114,12 +114,13 @@ Line Rush also comes as an app for **Windows, macOS and Linux** (`desktop/`, Ele
 - **Fullscreen** with F11 or Alt+Enter, where Escape still pauses (in a browser, Escape kicks you out of fullscreen)
 - **Unlocked frame rate**: turns off V-Sync for less lag between your key press and the screen
 - **Discord status**: shows the song, tier and time left on your Discord profile
-- **Songs folder** (`Documents/Line Rush/Songs`): drop audio files in and they're imported when you open song select
+- **Songs folder** (`Documents/Line Rush/Songs`): drop audio files (or album folders of them) in and they're imported when you open song select
 - **Screenshots** with F12 (saved to `Pictures/Line Rush`)
 - starts instantly and **plays offline** (the game and songs are inside the app), and the menu music starts without a click
 - your save is written before the window closes, the screen doesn't sleep during a song, and the game keeps running in the background (1v1)
 - your login is kept by the app and encrypted with the system keychain; the game page itself never sees it
-- **automatic updates** from GitHub Releases (Windows and Linux; macOS shows a download link)
+- **automatic updates** from GitHub Releases (Windows and Linux; macOS shows a download link): checked at launch, every 4 hours and with **CHECK FOR UPDATES** under APP. The download shows its progress there, and **RESTART TO UPDATE** saves your game, installs and opens the new version
+- locked down like a browser tab: the page is sandboxed and can only use the app's few calls, only from its own window; the server's answers can never run as a page; the Songs folder never follows links out of it; and the shipped app can't be run as plain Node or debugged from outside (Electron fuses)
 
 Everything app-only is under **APP** on the home screen. On the website that button is **GET THE APP**.
 
@@ -140,7 +141,7 @@ npm run app:dist   # make an installer for this computer in desktop/release/
 - **Nine licensed tracks** (four Expert, five Extreme) by other artists, all CC0 or CC BY 4.0, each checked on its source page (no NonCommercial / NoDerivatives / ShareAlike licenses, remixes or re-uploads). They're credited in the game (CREDITS on the home screen, and the license on each song panel) and in [MUSIC-LICENSE.md](MUSIC-LICENSE.md). Expert songs play in full; Extreme songs are a one-minute excerpt of their busiest part, like the Roblox version. To add one: put it in `scripts/licensed-tracks.json`, run `npm run tracks -- --from <folder with the downloads>` (makes `public/music/<id>.mp3` and its analysis), then `npm run charts`.
 - The Roblox version's licensed songs can't be used outside Roblox.
 
-Use **+ IMPORT** in song select to play your own audio file. Everything happens in your browser, and nothing is uploaded: the song is kept on your computer (IndexedDB) so it's still there next time, and its scores stay on your computer too, never in your account. **REMOVE IMPORT** on its song panel deletes it.
+Use **+ IMPORT** in song select (or drop audio files anywhere on the game) to play your own audio file. Everything happens in your browser, and nothing is uploaded: the song is kept on your computer (IndexedDB) so it's still there next time, and its scores stay on your computer too, never in your account. **REMOVE IMPORT** on its song panel deletes it.
 
 The import beatmapper:
 

@@ -620,9 +620,10 @@ function buildAppPanel(overlay: HTMLElement) {
   header('h3', 'SONGS & SCREENSHOTS', 438);
   button(ap, 'songs', { text: 'OPEN SONGS FOLDER', size: 13, x: 32, y: 458, w: 252, h: 46 });
   button(ap, 'shots', { text: 'SCREENSHOTS  (F12)', size: 13, x: 296, y: 458, w: 252, h: 46 });
-  label(ap, 'songsnote', { text: 'Audio files you put in the Songs folder are added when you open song select.', font: 'med', size: 12, color: T.muted, wrap: true, x: 32, y: 512, w: 516, h: 18 });
-  label(ap, 'version', { text: '', font: 'med', size: 12, color: T.dim, x: 32, y: 556, w: 300, h: 20 });
-  button(ap, 'update', { text: 'RESTART TO UPDATE', size: 12, ax: 1, x: 548, y: 548, w: 200, h: 36, r: 10, hidden: true }, 'primary');
+  label(ap, 'songsnote', { text: 'Audio files (or folders of them) in the Songs folder are added when you open song select.', font: 'med', size: 12, color: T.muted, wrap: true, x: 32, y: 512, w: 516, h: 18 });
+  label(ap, 'version', { text: '', font: 'med', size: 12, color: T.dim, x: 32, y: 556, w: 280, h: 20 });
+  button(ap, 'check', { text: 'CHECK FOR UPDATES', size: 12, ax: 1, x: 548, y: 548, w: 220, h: 36, r: 10, hidden: true });
+  button(ap, 'update', { text: 'RESTART TO UPDATE', size: 12, ax: 1, x: 548, y: 548, w: 220, h: 36, r: 10, hidden: true }, 'primary');
 }
 
 /** Scales the 1100x640 stages to fit the window (same rule as the Roblox UIScale). */

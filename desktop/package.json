@@ -2,7 +2,7 @@
   "name": "line-rush-desktop",
   "productName": "Line Rush",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Two buttons. Real beats. Don't miss. A two-lane rhythm game.",
   "author": "Line Rush",
   "homepage": "https://github.com/w7llywonka/rythym-web",
@@ -41,6 +41,13 @@
       "web/**/*",
       "package.json"
     ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "grantFileProtocolExtraPrivileges": false,
+      "resetAdHocDarwinSignature": true
+    },
     "artifactName": "Line-Rush-${version}-${os}-${arch}.${ext}",
     "win": {
       "target": [

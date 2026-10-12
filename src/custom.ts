@@ -723,10 +723,13 @@ function pickPeaks(x: Float32Array) {
   return peaks;
 }
 
+/** the biggest audio file an import takes */
+export const MAX_IMPORT_BYTES = 40 * 1024 * 1024;
+
 /** Decode and chart a user-selected recording locally. Nothing is uploaded. */
 export async function importSong(file: File, ctx: AudioContext, onProgress: Progress = () => {}): Promise<ImportedSong> {
   if (file.size <= 0) throw new Error('This file is empty. Please choose an audio recording.');
-  if (file.size > 40 * 1024 * 1024) throw new Error('Choose an audio file smaller than 40 MB.');
+  if (file.size > MAX_IMPORT_BYTES) throw new Error('Choose an audio file smaller than 40 MB.');
   if (!file.type.startsWith('audio/') && !/\.(mp3|wav|ogg|m4a|aac|flac|opus|webm|mp4|aiff?|caf)$/i.test(file.name)) {
     throw new Error('Please choose an audio file such as MP3, WAV, M4A, or OGG.');
   }

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkPassword, checkUsername, createAuth, parseCookies } from '../api/_lib/core.js';
+import { Readable } from 'node:stream';
+import { checkPassword, checkUsername, clientIp, createAuth, fromNode, parseCookies } from '../api/_lib/core.js';
 import { memoryStore } from '../api/_lib/store.js';
 
 // Test-only account (in-memory store, never leaves this process).
@@ -171,4 +172,35 @@ test('changing the password logs out other devices; delete removes everything', 
   // the name is free again
   assert.equal((await client(h, '10.0.0.8').call('POST', 'auth/register', { username: USER, password: PASS })).status, 201);
   assert.equal((await client(h, '10.0.0.8').call('GET', 'save')).status, 401);
+});
+
+test('client IP: the address the proxy saw, never one the client made up', async () => {
+  const xff = (v?: string) => (v ? { 'x-forwarded-for': v } : {});
+  assert.equal(clientIp(xff('203.0.113.9'), '10.0.0.1', 1), '203.0.113.9');
+  assert.equal(clientIp(xff('1.2.3.4, 203.0.113.9'), '10.0.0.1', 1), '203.0.113.9', 'a made-up first entry is ignored');
+  assert.equal(clientIp(xff('1.2.3.4, 203.0.113.9, 198.51.100.7'), '10.0.0.1', 2), '203.0.113.9', 'two proxies');
+  assert.equal(clientIp(xff(), '10.0.0.1', 1), '10.0.0.1');
+  assert.equal(clientIp(xff('1.2.3.4'), '10.0.0.1', 0), '10.0.0.1', 'not behind a proxy: the header is ignored');
+
+  // sign-ups from one address, each with a different made-up X-Forwarded-For / X-Real-IP: still one IP
+  const handle = fresh();
+  const statuses: number[] = [];
+  for (let i = 0; i < 6; i++) {
+    const body = JSON.stringify({ username: `spoof_${i}`, password: PASS });
+    const req = Object.assign(Readable.from([Buffer.from(body)]), {
+      method: 'POST', url: '/api/auth/register', socket: { remoteAddress: '10.0.0.1' },
+      headers: {
+        host: 'linerush.test', 'x-linerush': '1', 'content-type': 'application/json',
+        'x-forwarded-for': `198.51.100.${i}, 203.0.113.9`, 'x-real-ip': `198.51.100.${i}`,
+      },
+    });
+    const parsed = await fromNode(req, 'auth/register', { trustProxy: true, proxyHops: 1 });
+    assert.equal(parsed.ip, '203.0.113.9');
+    statuses.push((await handle(parsed)).status);
+  }
+  assert.deepEqual(statuses, [201, 201, 201, 201, 201, 429]);
+
+  // without a proxy, forwarding headers are the client's own words
+  const direct = { method: 'GET', url: '/api/auth/me', socket: { remoteAddress: '10.0.0.1' }, headers: { host: 'localhost', 'x-real-ip': '6.6.6.6', 'x-forwarded-for': '6.6.6.6' } };
+  assert.equal((await fromNode(direct, 'auth/me', { trustProxy: false })).ip, '10.0.0.1');
 });

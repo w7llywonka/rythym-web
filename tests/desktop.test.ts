@@ -4,16 +4,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import net from 'node:net';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, symlink, truncate, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAuth, fromNode, sendNode } from '../api/_lib/core.js';
 import { memoryStore } from '../api/_lib/store.js';
 import { createApiProxy, normalizeServer, parseSetCookie } from '../desktop/api-proxy.js';
-import { createPresence, decode, encode, ipcPaths, toActivity } from '../desktop/discord.js';
+import { createPresence, decode, encode, ipcPaths, MAX_FRAME, toActivity } from '../desktop/discord.js';
 import { sanitizePrefs } from '../desktop/prefs.js';
 import { createAppHandler, ORIGIN } from '../desktop/protocol.js';
-import { listSongs, readSong } from '../desktop/songs-folder.js';
+import { listSongs, MAX_SONG_BYTES, readSong } from '../desktop/songs-folder.js';
 
 const tmp = () => mkdtemp(join(tmpdir(), 'linerush-desktop-'));
 
@@ -125,6 +125,79 @@ test('the API proxy drops expired cookies and reports an unreachable server', as
   assert.equal(vault.get('http://127.0.0.1:9'), null);
 });
 
+test('the API proxy keeps only the login cookie and hands the page inert data', async () => {
+  let reply = { type: 'text/html', body: '<script>alert(1)</script>', cookies: ['__cf_bm=cdn; Max-Age=1800; Path=/'] };
+  const seen: string[] = [];
+  const server = createServer((req, res) => {
+    seen.push(`${req.url} ${req.headers.cookie ?? ''}`);
+    res.writeHead(200, { 'Content-Type': reply.type, 'Set-Cookie': reply.cookies });
+    res.end(reply.body);
+  });
+  await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
+  try {
+    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    const vault = memoryVault();
+    vault.set(base, { cookie: 'lr_session=abc', expires: null });
+    const handler = createAppHandler({ dist: await tmp(), api: createApiProxy({ server: () => base, vault }) });
+
+    // a CDN's cookie doesn't replace (or clear) the login
+    let r = await apiCall(handler, 'GET', 'scores/feed');
+    assert.equal(vault.get(base)?.cookie, 'lr_session=abc');
+    reply.cookies = ['other=; Max-Age=0; Path=/'];
+    await apiCall(handler, 'GET', 'scores/feed');
+    assert.equal(vault.get(base)?.cookie, 'lr_session=abc');
+    assert.ok(seen.every(line => line.endsWith('lr_session=abc')), 'only the login cookie is sent');
+
+    // whatever the server answers can't run as a page on the app's origin
+    assert.equal(r.headers.get('content-type'), 'text/plain; charset=utf-8');
+    assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
+    assert.match(r.headers.get('content-security-policy') ?? '', /default-src 'none'; sandbox/);
+    reply = { type: 'application/json; charset=utf-8', body: '{"ok":true}', cookies: ['lr_session=new; Max-Age=60; Path=/'] };
+    r = await apiCall(handler, 'GET', 'auth/me');
+    assert.equal(r.headers.get('content-type'), 'application/json; charset=utf-8');
+    assert.equal(vault.get(base)?.cookie, 'lr_session=new');
+  } finally {
+    await new Promise(r => server.close(r));
+  }
+});
+
+test('Discord: a socket that isn\'t Discord can\'t freeze the app', async () => {
+  // a negative length used to loop forever; a huge one would buffer without end
+  for (const len of [-8, -1000, MAX_FRAME + 1]) {
+    const frame = Buffer.alloc(16);
+    frame.writeInt32LE(1, 0);
+    frame.writeInt32LE(len, 4);
+    let calls = 0;
+    assert.equal(decode(frame, () => { calls++; }), null, String(len));
+    assert.equal(calls, 0);
+  }
+
+  // something else listening where Discord would: the app hangs up and carries on
+  const dir = await tmp();
+  const path = join(dir, 'discord-ipc-0');
+  let closed = false;
+  const fake = net.createServer(sock => {
+    sock.on('data', () => {
+      const bad = Buffer.alloc(16);
+      bad.writeInt32LE(1, 0);
+      bad.writeInt32LE(-8, 4);
+      sock.write(bad);
+    });
+    sock.on('close', () => { closed = true; });
+  });
+  await new Promise<void>(r => fake.listen(path, r));
+  const presence = createPresence({ clientId: '123', paths: [path], retryMs: 60_000 });
+  try {
+    presence.setEnabled(true);
+    for (let i = 0; i < 100 && !closed; i++) await new Promise(r => setTimeout(r, 20));
+    assert.ok(closed, 'the connection is dropped');
+    assert.equal(presence.connected, false);
+  } finally {
+    presence.destroy();
+    await new Promise(r => fake.close(r));
+  }
+});
+
 test('Discord: frames round-trip and the status reaches a Discord socket', async () => {
   const frames: [number, unknown][] = [];
   const rest = decode(Buffer.concat([encode(1, { a: 1 }), encode(3, { b: 2 }), encode(0, { c: 3 }).subarray(0, 5)]), (op, msg) => frames.push([op, msg]));
@@ -188,6 +261,28 @@ test('Songs folder: lists audio files only, reads nothing outside the folder', a
   assert.deepEqual([...(await readSong(dir, 'beat.mp3'))!], [1, 2, 3, 4]);
   for (const bad of ['../beat.mp3', 'notes.txt', '/etc/passwd.mp3', 'sub/beat.mp3', '..\\beat.mp3', 'nope.mp3', 42 as never]) {
     assert.equal(await readSong(dir, bad), null, String(bad));
+  }
+});
+
+test('Songs folder: album folders are read one level down; links and huge files never are', async () => {
+  const root = await tmp();
+  const dir = join(root, 'Songs');
+  const outside = join(root, 'private');
+  await mkdir(join(dir, 'Album', 'Disc 2'), { recursive: true });
+  await mkdir(outside);
+  await writeFile(join(outside, 'secret.mp3'), 'not yours');
+  await writeFile(join(dir, 'Album', 'one.mp3'), Buffer.from([5, 6]));
+  await writeFile(join(dir, 'Album', 'Disc 2', 'deep.mp3'), 'too deep');
+  await symlink(join(outside, 'secret.mp3'), join(dir, 'linked.mp3'));
+  await symlink(outside, join(dir, 'LinkedFolder'));
+  await writeFile(join(dir, 'huge.wav'), '');
+  await truncate(join(dir, 'huge.wav'), MAX_SONG_BYTES + 1);
+
+  const list = await listSongs(dir);
+  assert.deepEqual(list.map(s => s.name).sort(), ['Album/one.mp3', 'huge.wav']);
+  assert.deepEqual([...(await readSong(dir, 'Album/one.mp3'))!], [5, 6]);
+  for (const bad of ['linked.mp3', 'LinkedFolder/secret.mp3', 'Album/Disc 2/deep.mp3', 'huge.wav', 'Album/../linked.mp3', 'Album\\one.mp3', 'one.mp3:x.mp3']) {
+    assert.equal(await readSong(dir, bad), null, bad);
   }
 });
 

@@ -3,6 +3,7 @@
 // Songs folder. On the website the same button is a GET THE APP link instead.
 import appConfig from '../../desktop/app-config.json';
 import { MODES, STYLES } from '../config.ts';
+import { MAX_IMPORT_BYTES } from '../custom.ts';
 import { $, show, txt } from '../ui.ts';
 import { game } from './services.ts';
 import { saveNow } from './save.ts';
@@ -13,7 +14,8 @@ import { S } from './state.ts';
 interface DesktopInfo {
   version: string; platform: string; fullscreen: boolean; unlockFps: boolean; unlockFpsActive: boolean;
   discord: boolean; discordAvailable: boolean; server: string; songsDir: string;
-  update: { state: 'none' | 'available' | 'ready'; version: string };
+  updates: boolean;
+  update: { state: 'none' | 'available' | 'downloading' | 'ready'; version: string; percent: number };
 }
 interface SongFile { name: string; size: number; mtime: number }
 type DesktopEvent =
@@ -29,6 +31,7 @@ interface DesktopBridge {
   openFolder(which: 'songs' | 'screenshots'): Promise<void>;
   listSongs(): Promise<SongFile[]>;
   readSong(name: string): Promise<Uint8Array | null>;
+  checkUpdates(): Promise<'off' | 'busy' | 'latest' | 'found' | 'error'>;
   installUpdate(): Promise<void>;
   readyToClose(): Promise<void>;
   activity(a: Activity): void;
@@ -59,7 +62,23 @@ function refreshPanel() {
   txt($('app.version'), `Line Rush ${info.version}  ·  ${os}`);
   const u = info.update;
   show($('app.update'), u.state !== 'none');
-  txt($('app.update'), u.state === 'ready' ? `RESTART TO UPDATE` : `GET ${u.version}`);
+  show($('app.check'), info.updates && u.state === 'none');
+  txt($('app.update'), u.state === 'ready' ? 'RESTART TO UPDATE'
+    : u.state === 'downloading' ? `DOWNLOADING ${u.version}  ${u.percent}%` : `GET ${u.version}`);
+}
+
+let checking = false;
+async function checkForUpdates() {
+  if (checking) return;
+  checking = true;
+  txt($('app.check'), 'CHECKING...');
+  const result = await desktop!.checkUpdates().catch(() => 'error' as const);
+  checking = false;
+  txt($('app.check'), 'CHECK FOR UPDATES');
+  if (result === 'latest') showToast(`You have the latest version (${info?.version ?? ''}).`);
+  else if (result === 'error') showToast("Couldn't check for updates. Check your connection.");
+  else if (result === 'off') showToast('This build of the app doesn\'t update itself.');
+  // 'found' and 'busy' are shown by the update itself
 }
 
 async function openPanel() {
@@ -141,10 +160,12 @@ async function syncSongsFolder() {
       if (S.screen !== 'select') break; // never chart a song in the middle of a run; next visit picks it up
       const key = `${f.name}|${f.size}|${f.mtime}`;
       if (known[key]) continue;
-      const bytes = await desktop!.readSong(f.name);
       known[key] = Date.now();
       try { localStorage.setItem(SEEN_KEY, JSON.stringify(known)); } catch { /* storage full */ }
-      if (bytes) await importFile(new File([bytes as Uint8Array<ArrayBuffer>], f.name));
+      const fileName = f.name.slice(f.name.lastIndexOf('/') + 1); // "Album/song.mp3" -> "song.mp3"
+      if (f.size > MAX_IMPORT_BYTES) { showToast(`${fileName} is over 40 MB, so it wasn't added.`); continue; }
+      const bytes = await desktop!.readSong(f.name);
+      if (bytes) await importFile(new File([bytes as Uint8Array<ArrayBuffer>], fileName));
     }
   } catch { /* folder unreadable: nothing to add */ }
   syncing = false;
@@ -157,8 +178,12 @@ function onEvent(e: DesktopEvent) {
   else if (e.type === 'songs-changed') { if (S.screen === 'select') void syncSongsFolder(); }
   else if (e.type === 'fullscreen') { if (info) { info.fullscreen = e.on; refreshPanel(); } }
   else if (e.type === 'update') {
+    const before = info?.update.state;
     if (info) { info.update = e.update; refreshPanel(); }
-    showToast(e.update.state === 'ready' ? `Update ${e.update.version} is ready. It installs when you close the game.` : `Line Rush ${e.update.version} is out! Get it under APP.`);
+    if (e.update.state === before) return; // download progress: the APP panel shows it
+    if (e.update.state === 'ready') showToast(`Update ${e.update.version} is ready. Restart the game to install it.`);
+    else if (e.update.state === 'available') showToast(`Line Rush ${e.update.version} is out! Get it under APP.`);
+    else if (e.update.state === 'downloading') showToast(`Downloading Line Rush ${e.update.version} in the background...`);
   } else if (e.type === 'closing') {
     // the window is closing: write the save first (the website can only hope a beacon gets out)
     void saveNow().catch(() => {}).finally(() => void desktop!.readyToClose());
@@ -198,9 +223,14 @@ export function initDesktop() {
   onClick('app.songs', () => void desktop.openFolder('songs'));
   onClick('app.shots', () => void desktop.openFolder('screenshots'));
   onClick('app.update', () => {
-    if (info?.update.state === 'ready') void desktop.installUpdate();
+    const u = info?.update;
+    if (u?.state === 'ready') {
+      showToast('Saving and restarting to update...');
+      void desktop.installUpdate();
+    } else if (u?.state === 'downloading') showToast(`Still downloading (${u.percent}%). It's ready in a moment.`);
     else window.open(appConfig.releases, '_blank', 'noopener,noreferrer');
   });
+  onClick('app.check', () => void checkForUpdates());
 
   desktop.onEvent(onEvent);
   void desktop.info().then(i => { info = i; });

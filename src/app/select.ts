@@ -14,7 +14,7 @@ import { playPreview } from './preview.ts';
 import { audio } from './services.ts';
 import { loadImportAudio, loadImports, removeImport, saveImport, updateImportSong } from './importStore.ts';
 import { queueSave } from './save.ts';
-import { go, onClick, setAmbient, showToast } from './shell.ts';
+import { closeModal, go, onClick, setAmbient, showToast } from './shell.ts';
 import { S, bestKey, chartFor, packOf, setTracks, settings } from './state.ts';
 import { openStyle } from './stylePanel.ts';
 
@@ -258,6 +258,29 @@ export async function importFile(file: File) {
   }
 }
 
+// ---- dropping audio files on the game -----------------------------------------------------------
+const MAX_DROP = 10;
+let dropping = false;
+
+/** files dropped anywhere on the game are imported one after another, in song select */
+function importDropped(files: File[]) {
+  if (S.screen === 'game') return showToast('Finish the song first, then drop the file again.');
+  if (dropping || S.transitioning) return showToast('Still adding songs. Drop it again in a moment.');
+  closeModal();
+  const run = async () => {
+    dropping = true;
+    try {
+      for (const file of files.slice(0, MAX_DROP)) {
+        if (S.screen !== 'select') return; // a song started: the rest can be dropped again later
+        await importFile(file);
+      }
+      if (files.length > MAX_DROP) showToast(`Added the first ${MAX_DROP} files. Drop the others again to add them.`);
+    } finally { dropping = false; }
+  };
+  if (S.screen === 'select') void run();
+  else void go('select', () => { setTab(S.tab, true); void run(); });
+}
+
 /** bring back the songs imported on this computer */
 async function restoreImports() {
   let saved: Track['song'][] = [];
@@ -379,6 +402,19 @@ export function initSelect() {
     const file = fileInput.files?.[0];
     fileInput.value = '';
     if (file) void importFile(file);
+  });
+  // a file dropped on the page is imported, never opened in place of the game
+  const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files');
+  window.addEventListener('dragover', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = S.screen === 'game' ? 'none' : 'copy';
+  });
+  window.addEventListener('drop', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    const files = [...e.dataTransfer!.files];
+    if (files.length) importDropped(files);
   });
 
   for (const tab of TAB_ORDER) S.selectedSong[tab] = songsFor(tab)[0];

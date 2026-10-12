@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAuth } from '../api/_lib/core.js';
 import { memoryStore } from '../api/_lib/store.js';
+import { maxScore } from '../api/_lib/catalog.js';
 
 // Test-only accounts in an in-memory store.
 const PASS = 'amber-signal-63-river';
@@ -145,4 +146,20 @@ test('guests can not use 1v1', async () => {
   const handle = createAuth(memoryStore(), { scrypt: { N: 1024, r: 8, p: 1 } });
   const res = await handle({ method: 'GET', path: 'versus/poll', ip: '1.1.1.1', secure: true, rawBody: '', headers: { host: 'x.test', 'x-linerush': '1' } });
   assert.equal(res.status, 401);
+});
+
+test('1v1 scores are capped at what the chart allows', async () => {
+  const { player } = setup();
+  const alice = await player('alice_cap'), bob = await player('bob_cap');
+  await alice.poll(); await bob.poll();
+  await alice.call('POST', 'versus/challenge', { to: 'bob_cap', songId: 'current', diff: 'Expert' });
+  const match = (await bob.call('POST', 'versus/respond', { from: 'alice_cap', accept: true })).body.match;
+  const max = maxScore('current', 'Expert');
+  assert.ok(max > 0 && max < 99_999_999);
+
+  await alice.call('POST', 'versus/progress', { matchId: match.id, score: 99_999_999, combo: 1, health: 100, accuracy: 100 });
+  assert.equal((await bob.poll({ match: match.id })).body.match.opp.score, max);
+  await alice.call('POST', 'versus/final', { matchId: match.id, score: 99_999_999, cleared: true });
+  const r = await bob.call('POST', 'versus/final', { matchId: match.id, score: 1000, cleared: true });
+  assert.equal(r.body.match.result.them, max);
 });
