@@ -27,9 +27,10 @@ function refresh() {
   const title = $('profile.me.title');
   txt(title, p.title ? p.title.toUpperCase() : 'NO TITLE YET');
   title.style.color = p.title ? T.gold : T.dim;
-  txt($('profile.me.since'), p.since ? `Playing since ${dayText(p.since)}` : 'Play a song to start your story');
+  txt($('profile.me.since'), p.since ? `Playing since ${dayText(p.since)}` : p.plays > 0 ? 'Playing since the early days' : 'Play a song to start your story');
   const streak = p.bestStreak > 0 ? `Best streak ${p.bestStreak} day${p.bestStreak === 1 ? '' : 's'}` : '';
-  const vs = p.vsPlays > 0 ? `1v1 ${p.vsWins} W / ${p.vsPlays - p.vsWins} L` : '';
+  // wins of battles played (a draw is neither, so there's no loss count)
+  const vs = p.vsPlays > 0 ? `1v1 ${p.vsWins} win${p.vsWins === 1 ? '' : 's'} of ${p.vsPlays}` : '';
   txt($('profile.me.more'), [streak, vs].filter(Boolean).join('  ·  '));
   txt($('profile.stats.level.value'), String(levelFromXp(p.xp).level));
   txt($('profile.stats.plays.value'), compact(p.plays));
@@ -55,11 +56,26 @@ function refresh() {
     $(id).style.cursor = unlocked ? 'pointer' : 'default';
   });
   refreshLockerBadges();
+  fitName();
+}
+
+/**
+ * your whole name shows, tag and all: the name takes the room 'since' leaves on its line, then the
+ * font steps down to 16 px (it measures, so the panel has to be showing)
+ */
+function fitName() {
+  const name = $('profile.me.name'), since = $('profile.me.since').querySelector('.tx') as HTMLElement;
+  name.style.width = `${Math.max(380, $('profile.me').offsetWidth - 36 - 16 - since.offsetWidth)}px`;
+  const text = name.querySelector('.np-name') as HTMLElement;
+  for (let size = 24; size >= 16; size -= 2) {
+    name.style.fontSize = `${size}px`;
+    if (text.scrollWidth <= text.clientWidth) break;
+  }
 }
 
 export function openProfile() {
-  refresh();
   openModal($('profile'));
+  refresh();
 }
 
 export function initProfile() {
@@ -73,7 +89,7 @@ export function initProfile() {
   }));
   onClick('profile.close', closeModal);
   onClick('home.profile', openProfile);
-  onClick('profile.locker', () => openLocker());
+  onClick('profile.locker', () => openLocker(undefined, openProfile));
   onClick('profile.account', () => {
     if (S.account) openAccount();
     else if (S.accountsOffline) showToast("Accounts aren't available on this server. Your progress is saved in this browser.");

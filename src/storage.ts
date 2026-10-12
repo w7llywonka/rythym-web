@@ -115,6 +115,8 @@ function sanitizeProfile(raw: unknown): Profile {
   for (const key of ['vsWins', 'vsPlays', 'imports', 'kings', 'tops'] as const) out[key] = Math.floor(num(p[key], 0, 1e7, 0));
   out.tutorialDone = p.tutorialDone === true;
   out.since = Math.floor(num(p.since, 0, 1e6, 0));
+  // a save from before 1.1 has no `since`: the day it last played is the earliest day it shows
+  if (p.since === undefined && out.plays > 0 && out.lastDay > 0) out.since = out.lastDay;
   if (isObj(p.seen)) {
     let count = 0;
     for (const [key, v] of Object.entries(p.seen)) {
@@ -129,14 +131,20 @@ function migrate(d: Record<string, unknown>): Record<string, unknown> {
   return d;
 }
 
+/** profiles read from a save from before 1.1 (no `v`): one-time catch-ups (crediting imports) apply to them */
+const olderProfiles = new WeakSet<Profile>();
+export const fromOlderSave = (data: SaveData) => olderProfiles.has(data.profile);
+
 export function sanitize(raw: unknown): SaveData {
   const d = migrate(isObj(raw) ? raw : {});
+  const profile = sanitizeProfile(d.profile);
+  if (isObj(raw) && raw.v === undefined) olderProfiles.add(profile);
   return {
     v: SAVE_VERSION,
     settings: sanitizeSettings(d.settings),
     bests: sanitizeBests(d.bests),
     recent: sanitizeRecent(d.recent),
-    profile: sanitizeProfile(d.profile),
+    profile,
   };
 }
 

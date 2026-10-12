@@ -93,7 +93,8 @@ button.f:focus-visible { outline: 2px solid rgba(43, 212, 255, .7); outline-offs
 .dimmer { transition: opacity .2s; opacity: 0; pointer-events: none; }
 .dimmer.on { opacity: .72; pointer-events: auto; }
 .fader { opacity: 0; transition: opacity .15s; }
-.toast { box-shadow: 0 0 0 1px #25252E, 0 12px 40px rgba(0, 0, 0, .5); }
+/* a toast never takes a click meant for what's under it; it moves up on results (shell.ts showScreen) */
+.toast { box-shadow: 0 0 0 1px #25252E, 0 12px 40px rgba(0, 0, 0, .5); pointer-events: none; transition: top .25s; }
 
 /* playfield */
 .heldbeam { opacity: 0; transition: opacity .06s; }
@@ -327,6 +328,10 @@ button.f:focus-visible { outline: 2px solid rgba(43, 212, 255, .7); outline-offs
 .np-grad { -webkit-background-clip: text; background-clip: text; color: transparent !important; }
 /* a title after the name gives way first when there's no room */
 .np-extra { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8A8A97; font-weight: 500; font-size: .87em; }
+/* a nameplate with something after it that always shows (the King of the Hill's score): the name gives way */
+.t.np-row .tx { display: flex; align-items: center; min-width: 0; }
+.np-row .np { flex: 0 1 auto; }
+.np-after { flex: none; margin-left: .28em; }
 
 /* NEW counts on the PROFILE / LOCKER buttons */
 .lk-badge { box-shadow: 0 0 0 2px #08080A, 0 0 14px rgba(255, 92, 168, .6); pointer-events: none; letter-spacing: 0 !important; }
