@@ -1,9 +1,11 @@
 // Leaderboard panel: top 10 for a chart (or this week's challenge) plus your own best and rank.
+// Players show with their tag, name color and title.
 import { api, type Board } from '../api.ts';
 import { MODES, T } from '../config.ts';
 import { formatNumber } from '../scoring.ts';
 import type { Diff, Track } from '../types.ts';
 import { $, show, txt } from '../ui.ts';
+import { renderNameplate } from './nameplate.ts';
 import { closeModal, onClick, openModal } from './shell.ts';
 import { S, bestKey } from './state.ts';
 
@@ -17,7 +19,7 @@ function render(board: Board | null, localBest: number | undefined, error?: stri
     show(row, !!e);
     if (!e) continue;
     const me = S.account && e.name.toLowerCase() === S.account.username.toLowerCase();
-    txt($(`board.list.row${i}.player`), e.title ? `${e.name}  ·  ${e.title}` : e.name);
+    renderNameplate($(`board.list.row${i}.player`), e.name, e, e.title ? `·  ${e.title}` : '');
     txt($(`board.list.row${i}.score`), formatNumber(e.score));
     row.style.boxShadow = me ? `0 0 0 1px ${T.cyan}` : 'none';
   }
@@ -58,4 +60,6 @@ export function openWeeklyBoard(songTitle: string, week: number) {
 
 export function initBoard() {
   onClick('board.close', closeModal);
+  // names (with their tag and title) get the room the score doesn't need
+  for (let i = 1; i <= 10; i++) $(`board.list.row${i}.player`).style.width = '300px';
 }

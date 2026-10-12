@@ -1,6 +1,7 @@
 // 1v1 (port of the Roblox versus client): lobby of online players, challenge pop-up, shared start,
 // live opponent panel, reactions on keys 1-4, result banner. Talks to /api/versus/* by polling.
-import { api, type VsMatch, type VsPoll } from '../api.ts';
+// Players show with their tag and name color; 1v1s played / won count toward unlocks.
+import { api, type Look, type VsMatch, type VsPoll } from '../api.ts';
 import { ease, fade, pop, tween } from '../anim.ts';
 import { MODES, T } from '../config.ts';
 import type { Run } from '../game.ts';
@@ -8,10 +9,14 @@ import { formatNumber } from '../scoring.ts';
 import type { Diff, PlaySet } from '../types.ts';
 import { $, html, show, txt } from '../ui.ts';
 import { openAuth, signedOut } from './accounts.ts';
+import { nameplateEl, nameplateHtml, renderNameplate } from './nameplate.ts';
 import { quitToSongs, startRun } from './play.ts';
+import { addUnlocks } from './results.ts';
+import { queueSave } from './save.ts';
 import { audio, game } from './services.ts';
 import { closeModal, escapeHtml, isOpen, onClick, openModal, queueToast, showToast } from './shell.ts';
 import { S, chartFor } from './state.ts';
+import { announceNewUnlocks, unlockedKeys } from './unlocks.ts';
 import { SongPrep, latestStart } from './vsPrep.ts';
 
 const REACTIONS = ['🔥', '😂', '😤', 'GG'];
@@ -29,8 +34,11 @@ const vs = {
   /** the last match given up here, so a poll that's in flight can't pull us back in */
   left: '',
   incoming: null as { from: string; songId: string; diff: string; expiresAt: number } | null,
-  current: null as { matchId: string; opponent: string; oppScore: number; result: VsMatch['result'] } | null,
+  current: null as { matchId: string; opponent: string; oppScore: number; result: VsMatch['result']; look: Look | null } | null,
 };
+/** tags / name colors of players seen in the lobby (so the challenge pop-up can show the challenger's) */
+const looks = new Map<string, Look>();
+const lookOf = (name: string) => looks.get(name.toLowerCase()) ?? null;
 /** the pop-up's song, downloading / decoding: ACCEPT waits for it */
 const prep = new SongPrep();
 const serverNow = () => Date.now() + vs.offset;
@@ -42,7 +50,9 @@ function lobbyTrack() {
   return t ? { t, diff: chartFor(t).diff } : null;
 }
 
-function renderLobby(online?: { name: string; busy: boolean }[]) {
+type OnlinePlayer = NonNullable<VsPoll['online']>[number];
+
+function renderLobby(online?: OnlinePlayer[]) {
   const pick = lobbyTrack();
   txt($('versus.song.value'), pick ? `${pick.t.title}  ·  ${MODES[pick.diff].label}` : '-');
   const list = $('versus.list');
@@ -56,8 +66,7 @@ function renderLobby(online?: { name: string; busy: boolean }[]) {
   for (const p of online) {
     const row = document.createElement('div');
     row.className = 'vsrow';
-    const name = document.createElement('span');
-    name.textContent = p.name;
+    const name = nameplateEl(p.name, p);
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'vsbtn';
@@ -91,7 +100,7 @@ function showPopup() {
   const box = $('challenge');
   if (!inc) { show(box, false); return; }
   const t = S.tracksById.get(inc.songId);
-  html($('challenge.text'), `<b>${escapeHtml(inc.from)}</b> wants to battle on <b>${escapeHtml(t?.title ?? '?')}</b> [${MODES[inc.diff as Diff]?.label ?? ''}]`);
+  html($('challenge.text'), `${nameplateHtml(inc.from, lookOf(inc.from))} wants to battle on <b>${escapeHtml(t?.title ?? '?')}</b> [${MODES[inc.diff as Diff]?.label ?? ''}]`);
   // accepting starts the battle ~6 s later, so the song has to be here first
   const ready = prep.ready(keyOf(inc));
   const accept = $('challenge.accept') as HTMLButtonElement;
@@ -132,8 +141,8 @@ function begin(m: VsMatch) {
   if (!t) { leave(m.id); return showToast("Couldn't load that song, so you forfeited."); }
   vs.incoming = null;
   showPopup();
-  vs.current = { matchId: m.id, opponent: m.opponent, oppScore: 0, result: null };
-  txt($('game.left.versus.opponent'), m.opponent);
+  vs.current = { matchId: m.id, opponent: m.opponent, oppScore: 0, result: null, look: m.opponentLook ?? lookOf(m.opponent) };
+  renderNameplate($('game.left.versus.opponent'), m.opponent, vs.current.look);
   txt($('game.left.versus.score'), '0');
   for (const part of ['combo', 'lead', 'sent', 'bubble']) txt($(`game.left.versus.${part}`), '');
   $('game.left.versus.health.fill').style.width = '100%';
@@ -160,7 +169,20 @@ function begin(m: VsMatch) {
 function leave(matchId: string) {
   void api.vsForfeit(matchId);
   vs.left = matchId;
-  if (vs.current?.matchId === matchId) vs.current = null;
+  if (vs.current?.matchId === matchId) {
+    if (!vs.current.result) countBattle(false);
+    vs.current = null;
+  }
+}
+
+/** a battle ended: it counts toward the 1v1 stats (and the DUELIST / CHAMPION tags) */
+function countBattle(won: boolean) {
+  const p = S.data.profile, before = unlockedKeys();
+  p.vsPlays++;
+  if (won) p.vsWins++;
+  queueSave();
+  announceNewUnlocks(before);
+  addUnlocks(before);
 }
 
 /** a 1v1 whose song won't load: forfeit right away, rather than leave the opponent waiting for the timeout */
@@ -183,6 +205,8 @@ function apply(d: VsPoll, sentAt: number) {
     vs.incoming = null;
     vs.answered = '';
   }
+  if (looks.size > 500) looks.clear();
+  for (const p of d.online ?? []) looks.set(p.name.toLowerCase(), { tag: p.tag ?? '', color: p.color ?? '' });
   showPopup();
   for (const e of d.events) {
     if (e.type === 'declined') {
@@ -196,6 +220,11 @@ function apply(d: VsPoll, sentAt: number) {
   const m = d.match;
   if (m && !vs.current && !m.result && m.id !== vs.left && serverNow() < m.endBy) begin(m);
   if (m && vs.current && m.id === vs.current.matchId) {
+    // their look can arrive with a later poll than the start
+    if (m.opponentLook && (m.opponentLook.tag !== vs.current.look?.tag || m.opponentLook.color !== vs.current.look?.color)) {
+      vs.current.look = m.opponentLook;
+      renderNameplate($('game.left.versus.opponent'), vs.current.opponent, m.opponentLook);
+    }
     if (m.opp) {
       vs.current.oppScore = m.oppDone ?? m.opp.score;
       txt($('game.left.versus.score'), formatNumber(vs.current.oppScore));
@@ -207,10 +236,13 @@ function apply(d: VsPoll, sentAt: number) {
     }
     if (m.result && !vs.current.result) {
       vs.current.result = m.result;
+      countBattle(m.result.outcome === 'win');
       if (S.screen === 'results' && vs.onResults) vsBanner();
       if (m.result.outcome === 'win') queueToast(`1V1 WIN vs ${vs.current.opponent}!`);
-      else if (S.screen !== 'results' && !game.run) showToast(m.result.outcome === 'lose' ? `1v1: ${vs.current.opponent} won` : '1v1: draw');
-      if (S.screen !== 'results' && !game.run) vs.current = null;
+      // (not while the results screen is on its way: it shows the result itself)
+      const away = S.screen !== 'results' && !game.run && !vs.onResults;
+      if (m.result.outcome !== 'win' && away) showToast(m.result.outcome === 'lose' ? `1v1: ${vs.current.opponent} won` : '1v1: draw');
+      if (away) vs.current = null;
     }
   }
   if (isOpen('versus')) renderLobby(d.online);
@@ -234,7 +266,8 @@ async function tick() {
         el.style.color = lead >= 0 ? T.green : T.red;
         next = 500;
       } else {
-        const res = await api.vsPoll({ lobby: isOpen('versus'), match: vs.current && !vs.current.result ? vs.current.matchId : undefined });
+        // the lobby list also while a challenge pop-up is up: it carries the challenger's tag and color
+        const res = await api.vsPoll({ lobby: isOpen('versus') || !!vs.incoming, match: vs.current && !vs.current.result ? vs.current.matchId : undefined });
         if (res.ok && res.data) apply(res.data, sentAt);
         else if (res.status === 401) signedOut();
         next = vs.current && !vs.current.result ? 1000 : isOpen('versus') || vs.incoming ? 2000 : 4000;
@@ -275,6 +308,7 @@ export function vsReact(i: number) {
 export function vsFinal(r: Run, cleared: boolean) {
   const v = r.opts?.versus;
   if (!v) return;
+  vs.onResults = true; // the results screen is coming: keep the battle for its banner
   void api.vsFinal(v.matchId, Math.floor(r.score), cleared).then(res => {
     if (res.ok && res.data) apply({ now: serverNow(), match: res.data.match, events: [], incoming: null }, Date.now());
   });
@@ -296,9 +330,10 @@ export function vsBanner() {
   if (!c || !vs.onResults) return html(label, '');
   const res = c.result;
   if (!res) return html(label, `<span style="color:${T.muted};font-size:15px">WAITING FOR ${escapeHtml(c.opponent.toUpperCase())}...</span>`);
+  const who = nameplateHtml(c.opponent, c.look);
   const head = res.outcome === 'win' ? `<span style="color:${T.green}">YOU WIN!</span>` : res.outcome === 'lose' ? `<span style="color:${T.red}">YOU LOSE</span>` : 'DRAW';
   const why = res.reason === 'forfeit' && res.outcome === 'win' ? '  (opponent left)' : res.reason === 'timeout' ? '  (timed out)' : '';
-  html(label, `${head}<br><span style="color:${T.muted};font-size:13px;font-weight:600">${formatNumber(res.you)} vs ${formatNumber(res.them)}  ·  ${escapeHtml(c.opponent)}${why}</span>`);
+  html(label, `${head}<br><span style="color:${T.muted};font-size:13px;font-weight:600">${formatNumber(res.you)} vs ${formatNumber(res.them)}  ·  ${who}${why}</span>`);
 }
 
 /** leaving the results screen: a settled battle is done; an unsettled one keeps polling and toasts the result */

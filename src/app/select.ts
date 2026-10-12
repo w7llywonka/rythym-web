@@ -17,6 +17,7 @@ import { queueSave } from './save.ts';
 import { closeModal, go, onClick, setAmbient, showToast } from './shell.ts';
 import { S, bestKey, chartFor, packOf, setTracks, settings } from './state.ts';
 import { openStyle } from './stylePanel.ts';
+import { announceNewUnlocks, unlockedKeys } from './unlocks.ts';
 
 function songsFor(tab: Tab): Track[] {
   if (tab === 'Recent') {
@@ -253,6 +254,13 @@ export async function importFile(file: File) {
     showToast(imported.warning ?? (kept
       ? `${t.title} added to ${MODES[t.difficulty].label} and saved on this computer. Tempo off? Use ½× or 2× under the BPM.`
       : `${t.title} added to ${MODES[t.difficulty].label} (couldn't save it on this computer, so it's here until you close the tab)`));
+    // a new song (not the same file again) counts toward the DJ tag
+    if (!old) {
+      const before = unlockedKeys();
+      S.data.profile.imports++;
+      queueSave();
+      announceNewUnlocks(before);
+    }
   } catch (e) {
     showToast(e instanceof Error ? e.message : "Couldn't import that file.");
   }
@@ -290,7 +298,22 @@ async function restoreImports() {
   setTracks([...S.tracks.filter(t => !restored.some(r => r.id === t.id)), ...restored]);
   for (const tab of TAB_ORDER) S.selectedSong[tab] ??= songsFor(tab)[0];
   if (S.screen === 'select') buildList();
+  creditImports();
   void upgradeImports();
+}
+
+/**
+ * Songs imported before imports were counted still count: the import count is at least the number of
+ * songs imported on this computer (called once they're restored, and when an account's save loads).
+ */
+export function creditImports() {
+  const p = S.data.profile;
+  const here = S.tracks.filter(t => t.custom).length;
+  if (p.imports >= here) return;
+  const before = unlockedKeys();
+  p.imports = here;
+  queueSave();
+  announceNewUnlocks(before);
 }
 
 /**
