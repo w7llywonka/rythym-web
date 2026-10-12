@@ -9,7 +9,7 @@ import { $, html, rgba, show, txt } from '../ui.ts';
 import { queueSave } from './save.ts';
 import { openSettings, refreshSettings } from './settingsPanel.ts';
 import { LOCK_ICON, cycle, keptSkin, skinHint } from './settingsView.ts';
-import { escapeHtml, onClick, openModal } from './shell.ts';
+import { escapeHtml, onClick, onPanelClose, openModal } from './shell.ts';
 import { settings } from './state.ts';
 import { activeNoteStyle, unlockStats } from './unlocks.ts';
 
@@ -110,11 +110,15 @@ export function openCustom() {
   refresh();
 }
 
-export function closeCustom() {
+/** the skin you stopped on is used if it's unlocked; otherwise you keep the one you had */
+function applySkin() {
   const had = activeNoteStyle(), next = keptSkin(browse, skinOpen(browse), had);
   if (next !== had) settings().noteStyle = next;
   queueSave();
-  openSettings();
+}
+
+export function closeCustom() {
+  openSettings(); // leaving the panel applies the skin (onPanelClose below)
 }
 
 export function initCustomize() {
@@ -146,4 +150,5 @@ export function initCustomize() {
   });
   onClick('custom.done', closeCustom);
   onClick('custom.close', closeCustom);
+  onPanelClose($('custom'), applySkin);
 }

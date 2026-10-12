@@ -168,7 +168,7 @@ export async function startTutorial() {
     await prepareAudio();
     // the menus keep working while it renders: if they've moved on (a song, another screen or panel), leave them be
     if (!tutorialCanStart({ screen: S.screen, running: !!game.run, transitioning: S.transitioning, panel: !!S.modal })) {
-      showToast('The tutorial is ready. Press TUTORIAL to start it.');
+      if (!game.run) showToast('The tutorial is ready. Press TUTORIAL to start it.');
       return;
     }
     track ??= tutorialTrack();

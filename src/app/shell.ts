@@ -48,9 +48,14 @@ export function go(name: Screen, setup?: () => void): Promise<void> {
   });
 }
 
+// what a panel does whenever it goes away, however that happens (its own button, Escape, another
+// panel opening over it, a 1v1 starting...)
+const closeHooks = new Map<HTMLElement, () => void>();
+export const onPanelClose = (panel: HTMLElement, fn: () => void) => { closeHooks.set(panel, fn); };
+
 export function openModal(panel: HTMLElement) {
   if (S.modal === panel) return;
-  if (S.modal) show(S.modal, false);
+  if (S.modal) { show(S.modal, false); closeHooks.get(S.modal)?.(); }
   S.modal = panel;
   const dim = $('dimmer');
   show(dim, true);
@@ -61,8 +66,10 @@ export function openModal(panel: HTMLElement) {
 
 export function closeModal() {
   if (!S.modal) return;
-  show(S.modal, false);
+  const was = S.modal;
+  show(was, false);
   S.modal = null;
+  closeHooks.get(was)?.();
   const dim = $('dimmer');
   dim.classList.remove('on');
   setTimeout(() => { if (!S.modal) show(dim, false); }, 160);

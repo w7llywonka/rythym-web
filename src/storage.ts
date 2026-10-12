@@ -8,7 +8,9 @@ import type { Bests, Diff, Profile, RecentEntry, SaveData, Settings } from './ty
 export const STORAGE_KEY = 'lineRush.save.v2';
 /**
  * The save format. Saves from before it was written have no `v` and read the same way; when a later
- * version changes what a field means, convert older saves in migrate() below.
+ * version changes what a field means, convert older saves in migrate() below. Bump it whenever fields
+ * are added too: the server (core.js 'PUT save') keeps fields an older game doesn't know only when the
+ * older game's save has a lower `v`.
  */
 export const SAVE_VERSION = 3;
 
