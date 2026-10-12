@@ -142,7 +142,7 @@ export function buildUI(app: HTMLElement) {
   button(home, 'credits', { text: 'CREDITS', size: 10, ax: 1, ay: 1, x: [1, -30], y: [1, -14], w: 84, h: 28, r: 8 });
   // the desktop app's panel (APP), or a download link on the website (GET THE APP)
   button(home, 'app', { text: 'GET THE APP', size: 10, ay: 1, x: 30, y: [1, -14], w: 110, h: 28, r: 8, hidden: true });
-  label(home, 'nowplaying', { html: '', font: 'med', size: 14, color: T.dim, align: 'center', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -18], w: 800, h: 20 });
+  label(home, 'nowplaying', { html: '', font: 'med', size: 14, color: T.dim, align: 'center', truncate: true, ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -18], w: 590, h: 20 });
   const chip = frame(home, 'chip', { x: 30, y: 24, w: 300, h: 64, r: 14 });
   label(chip, 'name', { text: 'Player', font: 'black', size: 16, truncate: true, x: 14, y: 8, w: 180, h: 20 });
   label(chip, 'level', { text: 'LV 1', font: 'black', size: 14, color: T.gold, align: 'right', ax: 1, x: [1, -14], y: 8, w: 90, h: 20 });
