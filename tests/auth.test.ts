@@ -83,6 +83,66 @@ test('sign up, stay logged in, save, log out, log back in', async () => {
   assert.deepEqual((await c.call('GET', 'save')).body.data, { profile: { xp: 77 } });
 });
 
+test("a save from an older game (the 1.0 app after playing 1.1) keeps what that game doesn't know", async () => {
+  const store = memoryStore();
+  const calls: string[] = [];
+  const spy = new Proxy(store, {
+    get(target, k) {
+      const v = (target as Record<string | symbol, unknown>)[k];
+      return typeof v === 'function' ? (...a: unknown[]) => { calls.push(String(k)); return v.apply(target, a); } : v;
+    },
+  });
+  const c = client(createAuth(spy, { scrypt: { N: 1024, r: 8, p: 1 } }));
+  await c.call('POST', 'auth/register', { username: USER, password: PASS });
+  const get = async () => (await c.call('GET', 'save')).body.data;
+
+  // 1.1: save format 3, with fields 1.0 never had (and a top-level key of its own)
+  const v11 = {
+    v: 3,
+    settings: { musicVolume: 0.5, noteStyle: 'Glow', hitEffect: 'Sparks', theme: 'royal', laneDim: 0.4, menuMusic: false },
+    profile: {
+      xp: 5000, plays: 40, title: 'Rookie', achievements: { first_clear: true, acc_99: true },
+      tag: 'king', nameColor: 'royal', vsWins: 12, vsPlays: 20, kings: 1, tops: 5, tutorialDone: true, since: 20700, seen: { 'tag:king': true },
+    },
+    bests: { current: { score: 9000 } },
+    recent: [{ id: 'current' }],
+    extra: { from: 'a newer game' },
+  };
+  assert.equal((await c.call('PUT', 'save', { data: v11 })).status, 200);
+
+  // 1.0: no v, none of the new fields, and a song played since
+  const v10 = {
+    settings: { musicVolume: 0.9, noteStyle: 'Flat' },
+    profile: { xp: 5200, plays: 41, title: 'Hard Hitter', achievements: { first_clear: true, acc_99: true, clear_hard: true } },
+    bests: { current: { score: 9500 } },
+    recent: [{ id: 'afterglow' }, { id: 'current' }],
+  };
+  calls.length = 0;
+  assert.equal((await c.call('PUT', 'save', { data: v10 })).status, 200);
+  assert.deepEqual(calls, ['get', 'get', 'incr', 'get', 'set'], 'one read of the stored save, one write');
+  assert.deepEqual(await get(), {
+    v: 3,
+    settings: { ...v11.settings, musicVolume: 0.9, noteStyle: 'Flat' },
+    profile: { ...v11.profile, xp: 5200, plays: 41, title: 'Hard Hitter', achievements: { first_clear: true, acc_99: true, clear_hard: true } },
+    bests: v10.bests, recent: v10.recent, extra: v11.extra,
+  });
+
+  // the same format or a newer one: the last save wins, as before
+  for (const data of [{ v: 3, profile: { xp: 6000 } }, { v: 4, profile: { xp: 7000 }, settings: { future: 1 } }]) {
+    assert.equal((await c.call('PUT', 'save', { data })).status, 200);
+    assert.deepEqual(await get(), data);
+  }
+  // and 1.1 next to a newer game keeps that game's fields the same way
+  await c.call('PUT', 'save', { data: { v: 3, profile: { xp: 7100 }, settings: { musicVolume: 1 } } });
+  assert.deepEqual(await get(), { v: 4, profile: { xp: 7100 }, settings: { future: 1, musicVolume: 1 } });
+
+  // the size limit counts the merged save; a refused save changes nothing
+  const big = { v: 4, extra: 'x'.repeat(60 * 1024) };
+  assert.equal((await c.call('PUT', 'save', { data: big })).status, 200);
+  assert.equal((await c.call('PUT', 'save', { data: { profile: { notes: 'y'.repeat(50 * 1024) } } })).status, 413);
+  assert.deepEqual(await get(), big);
+});
+
 test('usernames are unique regardless of case', async () => {
   const h = fresh();
   assert.equal((await client(h).call('POST', 'auth/register', { username: USER, password: PASS })).status, 201);

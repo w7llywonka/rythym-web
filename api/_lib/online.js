@@ -6,10 +6,11 @@
 //   look:{user}          what a player wears online: { title, tag, color } (kept 400 days)
 //   title:{user}         the old title-only key, read when there's no look yet (no longer written)
 //   boards:{user}        set of boards a player is on (so deleting an account removes them)
+//   earned:{user}        set of unlocks the server saw happen: 'top1' (took #1 on a board), 'king' (King of the Hill)
 //   feed                 newest-first list of big plays (structured, the client renders it safely)
 import { DIFF_LABEL, RANK, SONGS, chartExists, maxScore } from './catalog.js';
 import { currentWeek, pickWeekly } from '../../shared/weekly.js';
-import { cleanNameColor, cleanTag } from '../../shared/cosmetics.js';
+import { NAME_COLORS, TAGS, cleanNameColor, cleanTag, cleanTitle } from '../../shared/cosmetics.js';
 
 const TOP = 10;
 const FEED_KEEP = 20;
@@ -19,11 +20,16 @@ const LOOK_TTL = 400 * 86400;
 
 const chartKey = (songId, diff) => `lb:${songId}:${diff}`;
 const weekKey = week => `wk:${week}`;
-const cleanTitle = t => (typeof t === 'string' ? t.replace(/[^\w !'&.-]/g, '').slice(0, 24) : '');
 
-// ---- looks: tags and name colors are ids from shared/cosmetics.js, anything else becomes '' ----------
+// ---- looks: titles, tags and name colors come from shared/cosmetics.js, anything else becomes '' ------
 const CLEAN = { title: cleanTitle, tag: cleanTag, color: cleanNameColor };
 const LOOK_FIELDS = Object.keys(CLEAN);
+// '#1', 'KING' and Royal unlock on the boards, so the server checks them against earned:{user}. The rest
+// unlock from the player's own save: the server only checks that they're real ids.
+const EARNED_BY = { tops: 'top1', kings: 'king' };
+const LISTS = { tag: TAGS, color: NAME_COLORS };
+/** the earned:{user} member a look field's id needs, or undefined */
+const needs = (field, id) => EARNED_BY[LISTS[field]?.find(i => i.id === id)?.unlock.kind];
 
 /** @returns {{ title: string, tag: string, color: string }} */
 export const cleanLook = l => ({ title: cleanTitle(l?.title), tag: cleanTag(l?.tag), color: cleanNameColor(l?.color) });
@@ -42,13 +48,18 @@ export async function readLooks(store, lowers) {
 }
 /**
  * Saves what a request asks for: a field that's absent keeps its stored value, '' (or anything that
- * isn't allowed) clears it. Only reads the stored look when it needs it.
+ * isn't allowed, or not earned) clears it. Only reads the stored look and earned set when it needs them.
  */
 export async function saveLook(store, lower, body) {
   const given = LOOK_FIELDS.filter(f => Object.hasOwn(body, f));
   let look = cleanLook(null);
   if (given.length < LOOK_FIELDS.length) [look] = await readLooks(store, [lower]);
   for (const f of given) look[f] = CLEAN[f](body[f]);
+  const locked = given.filter(f => needs(f, look[f]));
+  if (locked.length) {
+    const earned = await store.smembers(`earned:${lower}`);
+    for (const f of locked) if (!earned.includes(needs(f, look[f]))) look[f] = '';
+  }
   await store.set(`look:${lower}`, JSON.stringify(look), { ex: LOOK_TTL });
   return look;
 }
@@ -112,6 +123,9 @@ export function onlineRoutes(store, { now, limit, requireSession, optionalSessio
           week = await submit(weekKey(thisWeek), name, lower, score, WEEK_TTL);
           if (week.tookTop) message = 'king';
         }
+        // seen here, so they unlock '#1', 'KING' and Royal online (saveLook checks them)
+        if (chart.tookTop) await store.sadd(`earned:${lower}`, 'top1');
+        if (week?.tookTop) await store.sadd(`earned:${lower}`, 'king');
 
         // one feed line per player per 15 s
         if (message && await store.set(`cooldown:feed:${lower}`, '1', { ex: 15, nx: true })) {
@@ -146,11 +160,11 @@ export function onlineRoutes(store, { now, limit, requireSession, optionalSessio
       },
     },
 
-    /** take a deleted account off every board */
+    /** take a deleted account off every board, with its look and what it earned */
     async forget(name) {
       const lower = name.toLowerCase();
       for (const key of await store.smembers(`boards:${lower}`)) await store.zrem(key, name);
-      await store.del(`boards:${lower}`, ...lookKeys(lower));
+      await store.del(`boards:${lower}`, `earned:${lower}`, ...lookKeys(lower));
     },
   };
 }

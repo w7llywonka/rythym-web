@@ -33,6 +33,19 @@ const COMMON = new Set(['1234567890', '0123456789', '12345678910', '123456789a',
 const scrypt = (password, salt, { N, r, p }) => new Promise((resolve, reject) =>
   scryptCb(password, salt, 32, { N, r, p, maxmem: 256 * 1024 * 1024 }, (err, key) => (err ? reject(err) : resolve(key))));
 const sha256 = s => createHash('sha256').update(s).digest('hex');
+const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** a save's format version (SaveData.v in src/storage.ts; saves from before 1.1 have none) */
+const saveVersion = d => (Number.isSafeInteger(d.v) && d.v > 0 ? d.v : 0);
+/**
+ * A save from an older game than the stored one (e.g. the 1.0 app after playing on 1.1) only has the
+ * fields that game knows: its values win, everything else in the stored save is kept.
+ */
+function mergeOlder(stored, data) {
+  const out = { ...stored, ...data, v: stored.v };
+  for (const k of ['profile', 'settings']) if (isObj(stored[k]) && isObj(data[k])) out[k] = { ...stored[k], ...data[k] };
+  return out;
+}
 
 export function checkUsername(name) {
   if (typeof name !== 'string' || !USERNAME.test(name)) return 'Usernames are 3-20 letters, numbers or _.';
@@ -212,8 +225,11 @@ export function createAuth(store, options = {}) {
       const s = await requireSession(req);
       const lower = s.user.username.toLowerCase();
       await limit(`save:${lower}`, 60, 600, 'Saving too often. Your progress will sync in a moment.');
-      const data = req.body.data;
-      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new HttpError(400, 'Invalid save.');
+      let data = req.body.data;
+      if (!isObj(data)) throw new HttpError(400, 'Invalid save.');
+      const old = await store.get(`save:${lower}`);
+      const stored = old ? JSON.parse(old).data : null;
+      if (isObj(stored) && saveVersion(data) < saveVersion(stored)) data = mergeOlder(stored, data);
       const updatedAt = now();
       const raw = JSON.stringify({ data, updatedAt });
       if (raw.length > MAX_SAVE) throw new HttpError(413, 'Save is too large.');

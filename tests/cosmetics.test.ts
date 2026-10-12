@@ -1,7 +1,7 @@
 // Unlockable cosmetics (shared/cosmetics.js) and the new save fields that go with them.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HIT_EFFECTS, NAME_COLORS, NOTE_SKINS, TAGS, THEMES, cleanNameColor, cleanTag, describeRule, isUnlocked } from '../shared/cosmetics.js';
+import { HIT_EFFECTS, NAME_COLORS, NOTE_SKINS, TAGS, THEMES, TITLES, cleanNameColor, cleanTag, cleanTitle, describeRule, isUnlocked } from '../shared/cosmetics.js';
 import { ACHIEVEMENTS, DEFAULT_SETTINGS } from '../src/config.ts';
 import { SAVE_VERSION, sanitize } from '../src/storage.ts';
 
@@ -40,6 +40,15 @@ test('cosmetics: the server only accepts known ids', () => {
   assert.equal(cleanNameColor('gold'), 'gold');
   assert.equal(cleanNameColor('default'), '');
   assert.equal(cleanNameColor('__proto__'), '');
+});
+
+test('titles: the server list is exactly the achievement titles', () => {
+  const fromAchievements = ACHIEVEMENTS.map(a => a.title);
+  for (const t of fromAchievements) assert.ok(TITLES.includes(t), `TITLES is missing "${t}"`);
+  for (const t of TITLES) assert.ok(fromAchievements.includes(t), `"${t}" is no achievement's title`);
+  assert.equal(new Set(TITLES).size, TITLES.length);
+  assert.equal(cleanTitle('Godlike'), 'Godlike');
+  for (const bad of ['Line Rush Staff', 'godlike', 'Godlike ', '', 42, null]) assert.equal(cleanTitle(bad), '', String(bad));
 });
 
 test('save: new settings and profile fields are sanitized, old saves get defaults', () => {

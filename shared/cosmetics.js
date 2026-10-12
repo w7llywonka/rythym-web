@@ -1,5 +1,5 @@
 // Unlockable cosmetics, shared by the game (src/app/unlocks.ts, the Locker) and the server
-// (api/_lib/online.js, which only accepts tag / name color ids from these lists).
+// (api/_lib/online.js, which only accepts titles, tag ids and name color ids from these lists).
 //
 // Every unlock is a rule over the player's progress, worked out from the save each time (nothing to
 // keep in sync): reach a level, keep a streak, win 1v1s, finish the tutorial, earn an achievement...
@@ -16,6 +16,13 @@
  * @typedef {{ id: string, label: string, desc: string, unlock: UnlockRule }} CosmeticDef
  * @typedef {{ id: string, label: string, colors: [string, string], unlock: UnlockRule }} ThemeDef
  */
+
+/** the titles achievements give (src/config.ts ACHIEVEMENTS): the only titles shown online */
+export const TITLES = [
+  'Rookie', 'Combo Starter', 'Flawless', 'Hard Hitter', 'Expert', 'Extremist', 'Insane', 'Untouchable', 'Centurion',
+  'Unbreakable', 'Nightcore', 'Collector', 'Iron Will', 'Ghost', 'Night Vision', 'Minesweeper', 'Sharpshooter',
+  'Speed Demon', 'Endless', 'Challenger', 'Selector', 'Godlike',
+];
 
 const ALWAYS = /** @type {UnlockRule} */ ({ kind: 'always' });
 const level = n => /** @type {UnlockRule} */ ({ kind: 'level', n });
@@ -145,6 +152,8 @@ export function describeRule(rule) {
   }
 }
 
+/** a title the server accepts: exactly one from TITLES ('' = no title) */
+export const cleanTitle = t => (typeof t === 'string' && TITLES.includes(t) ? t : '');
 /** a tag id the server accepts ('' = no tag) */
 export const cleanTag = id => (typeof id === 'string' && TAGS.some(t => t.id === id) ? id : '');
 /** a name color id the server accepts ('' = default) */

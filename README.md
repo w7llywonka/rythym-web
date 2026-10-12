@@ -46,11 +46,12 @@ Perfect, Great and Good score 300/200/100. Combos of 10/25/50 give ×2/×3/×4. 
 - **Leaderboards**: every built-in chart has a global top 10 (TOP 10 on the song panel) with your own best and rank. Finishing a ranked run posts your score; the results screen shows your worldwide rank. Scores above what the chart allows are rejected.
 - **King of the Hill**: the weekly challenge has its own board; #1 is the King, shown on the home screen.
 - **Live feed**: new #1s, SS ranks, full combos on Expert+ and new Kings show up for everyone on the home screen.
-- **Tags and name colors**: the tag and name color you unlock in the game (and wear from the Locker) show next to your name on the leaderboards (with your title), in the live feed and in 1v1. The server only keeps ids from the game's own list (`shared/cosmetics.js`), never text a player typed.
+- **Titles, tags and name colors**: the ones you unlock in the game (and wear from the Locker) show next to your name on the leaderboards, in the live feed and in 1v1. The server only keeps achievement titles and ids from the game's own lists (`shared/cosmetics.js`), never text a player typed.
+- **What the server checks**: the **#1** and **KING** tags and the **Royal** name color need a #1 or a King of the Hill the server saw happen itself. Everything else unlocks from the player's own save, which the server can't check: it only makes sure the id is real, so those badges are self-reported.
 
 ## Accounts
 
-Players can make an account with just a **username and password**. Signing up keeps the progress already made as a guest. Logged-in progress (settings, bests, recent songs, XP, achievements, weekly scores) is saved to the account and follows you to any device. Guests can keep playing without one; their progress stays in the browser.
+Players can make an account with just a **username and password**. Signing up keeps the progress already made as a guest. Logged-in progress (settings, bests, recent songs, XP, achievements, weekly scores) is saved to the account and follows you to any device. Guests can keep playing without one; their progress stays in the browser. An older version of the game (say, a desktop app that hasn't updated yet) still syncs: it updates what it knows, and the settings and progress only newer versions have are kept.
 
 The **Account** panel (Profile → Account) lets players change their password, log out, log out on every device, or delete their account and its progress.
 
