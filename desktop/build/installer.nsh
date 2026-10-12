@@ -9,8 +9,7 @@
 ; ---- look: the welcome and finish pages, and the band at the top of the other pages, are dark like the game
 !define MUI_BGCOLOR 08080A
 !define MUI_TEXTCOLOR F4F4F6
-!define MUI_FINISHPAGE_LINK_COLOR 2BD4FF
-; an unthemed check box on the finish page: Windows' themed one ignores the light text color
+; unthemed check boxes on the finish page: Windows' themed ones ignore the light text color
 !define MUI_FORCECLASSICCONTROLS
 !define MUI_FINISHPAGE_NOREBOOTSUPPORT
 
@@ -197,11 +196,19 @@ Var lrName
     !define MUI_FINISHPAGE_RUN_TEXT "Play Line Rush now"
     !define MUI_FINISHPAGE_RUN_FUNCTION lrPlayNow
   !endif
+  ; the release notes, in the player's own browser too: setup may be running as an admin by now (MUI's
+  ; finish page link would open the browser as one). ExecShellAsUser only takes a file that exists (a URL
+  ; comes back "not_found"), so it starts Explorer with the URL.
+  Function lrWhatsNew
+    ${StdUtils.ExecShellAsUser} $0 "$WINDIR\explorer.exe" "open" "https://github.com/w7llywonka/rythym-web/releases/latest"
+  FunctionEnd
+  !define MUI_FINISHPAGE_SHOWREADME
+  !define MUI_FINISHPAGE_SHOWREADME_TEXT "See what's new in Line Rush ${VERSION}"
+  !define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
+  !define MUI_FINISHPAGE_SHOWREADME_FUNCTION lrWhatsNew
   !define MUI_FINISHPAGE_TITLE "$lrDoneTitle"
   !define MUI_FINISHPAGE_TEXT "Line Rush is installed and ready to play. You'll find it on your desktop and in the Start menu.$\r$\n$\r$\nGot music of your own? Drop it in this folder to play it:$\r$\nDocuments\Line Rush\Songs"
   !define MUI_FINISHPAGE_TEXT_LARGE
-  !define MUI_FINISHPAGE_LINK "What's new in Line Rush ${VERSION}"
-  !define MUI_FINISHPAGE_LINK_LOCATION "https://github.com/w7llywonka/rythym-web/releases/latest"
   !insertmacro MUI_PAGE_FINISH
 !macroend
 

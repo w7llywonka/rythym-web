@@ -1,6 +1,6 @@
 // The installers' packaging (desktop/package.json "build" and desktop/build/): the art is where electron-builder
-// looks for it and at the size NSIS / Finder / Linux desktops expect, the license page reads right, and nothing
-// here can get in the way of the app updating itself.
+// looks for it and at the size NSIS / Finder / Linux desktops expect, the license page reads right, nothing
+// here can get in the way of the app updating itself, and the signing secrets stay where they're needed.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -49,6 +49,31 @@ test('installer.nsh: uses electron-builder\'s hooks and never waits for a click 
   for (const line of nsh.split('\n').filter(l => /^\s*MessageBox/i.test(l))) assert.match(line, /\/SD /, line);
   // the finish page starts the game like electron-builder's own: as the player, with --updated after an update
   assert.match(nsh, /StdUtils\.ExecShellAsUser\} \$0 "\$launchLink" "open" "\$1"/);
+});
+
+test('installer.nsh: the finish page opens the release notes as the player too, never as an admin', () => {
+  const nsh = file(build.nsis.include).toString('utf8');
+  // MUI's finish page link (and a show-readme box without its own function) use a plain ExecShell: once setup
+  // is elevated to install for everyone, that starts the browser as an admin
+  assert.doesNotMatch(nsh, /MUI_FINISHPAGE_LINK|^\s*Exec(Shell)?\b/m);
+  assert.match(nsh, /^\s*!define MUI_FINISHPAGE_SHOWREADME_FUNCTION lrWhatsNew$/m);
+  assert.match(nsh, /^\s*!define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED$/m);
+  // ExecShellAsUser only opens files that exist (a URL comes back "not_found"), so Explorer opens the page
+  assert.match(nsh, /StdUtils\.ExecShellAsUser\} \$0 "\$WINDIR\\explorer\.exe" "open" "https:\/\/github\.com\/w7llywonka\/rythym-web\/releases\/latest"/);
+  for (const line of nsh.split('\n').filter(l => l.includes('ExecShellAsUser}'))) assert.doesNotMatch(line, /\} \$\w+ "\w+:/, line);
+});
+
+test('desktop.yml: each signing secret only reaches the Package step on its own system, never npm ci', () => {
+  const wf = readFileSync(new URL('../.github/workflows/desktop.yml', import.meta.url), 'utf8');
+  // npm ci runs the packages' install scripts
+  const steps = wf.split(/^ {6}- /m).slice(1);
+  assert.ok(steps.filter(s => /\bnpm ci\b/.test(s)).length >= 2);
+  for (const step of steps.filter(s => /\bnpm ci\b/.test(s))) assert.doesNotMatch(step, /secrets\./, step);
+  const uses = [...wf.matchAll(/\$\{\{([^}]*\bsecrets\.(\w+)[^}]*)\}\}/g)].filter(m => m[2] !== 'GITHUB_TOKEN');
+  assert.equal(uses.length, 7);
+  for (const [, expr, name] of uses) {
+    assert.equal(expr.trim(), `runner.os == '${name.startsWith('WIN_') ? 'Windows' : 'macOS'}' && secrets.${name} || ''`, name);
+  }
 });
 
 test('license page: plain ASCII (NSIS shows other text wrong without a BOM), the MIT terms word for word', () => {
