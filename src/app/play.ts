@@ -3,13 +3,14 @@ import { K } from '../config.ts';
 import type { RunOpts } from '../game.ts';
 import { currentSet } from '../scoring.ts';
 import type { Diff, Lane, Track } from '../types.ts';
-import { $ } from '../ui.ts';
+import { $, txt } from '../ui.ts';
 import { playPreview } from './preview.ts';
 import { queueSave } from './save.ts';
 import { setTab } from './select.ts';
 import { audio, game } from './services.ts';
 import { closeModal, eventAge, go, onClick, openModal } from './shell.ts';
 import { S, settings } from './state.ts';
+import { leaveTutorial } from './tutorial.ts';
 import { vsAskForfeit } from './versus.ts';
 
 export async function startRun(t: Track | null | undefined, diff?: Diff | null, quick = false, opts?: RunOpts) {
@@ -19,9 +20,11 @@ export async function startRun(t: Track | null | undefined, diff?: Diff | null, 
   diff = (diff && t.charts[diff]) ? diff : t.difficulty;
   closeModal();
   S.last = { song: t, chart: diff, opts: opts?.versus ? undefined : opts };
-  // remember it in Recent (newest first, one entry per song)
-  S.data.recent = [{ id: t.id, chart: diff }, ...S.data.recent.filter(e => e.id !== t.id)].slice(0, K.MAX_RECENT);
-  queueSave();
+  // remember it in Recent (newest first, one entry per song); the tutorial isn't a song you pick
+  if (!opts?.tutorial) {
+    S.data.recent = [{ id: t.id, chart: diff }, ...S.data.recent.filter(e => e.id !== t.id)].slice(0, K.MAX_RECENT);
+    queueSave();
+  }
   audio.token++;
   const set = opts?.set ?? currentSet(settings(), S.autoplay);
   await game.start(t, diff, quick, { ...opts, practice: { ...S.practice } }, set);
@@ -37,7 +40,9 @@ export function quickRestart() {
 }
 
 export function pauseRun() {
-  if (game.pause()) openModal($('pause'));
+  if (!game.pause()) return;
+  txt($('pause.quit'), game.run?.opts?.tutorial ? 'LEAVE TUTORIAL' : 'QUIT TO SONGS');
+  openModal($('pause'));
 }
 
 export function resumeRun() {
@@ -46,6 +51,7 @@ export function resumeRun() {
 }
 
 export function quitToSongs() {
+  if (game.run?.opts?.tutorial) return leaveTutorial();
   closeModal();
   game.stop();
   void go('select', () => setTab(S.tab, true));

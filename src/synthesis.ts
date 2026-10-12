@@ -2,12 +2,16 @@ import songData from './song-data.json' with { type: 'json' };
 import type { Song } from './types';
 
 const SAMPLE_RATE = 22050;
-const LEAD_IN = 0.75;
+/** seconds of silence before the first beat of a rendered recipe */
+export const LEAD_IN = 0.75;
 const TAU = Math.PI * 2;
 type Voice = 'pad' | 'kick' | 'snare' | 'hat' | 'bass' | 'pluck';
-interface Recipe {
+/** A song's score: tempo, length in bars, key, and one bar of melody / bass / kick (16th steps, -1 = rest). */
+export interface Recipe {
   id: string; bpm: number; bars: number; root: number; minor: boolean;
   melody: number[]; bass: number[]; kick: number[]; seed: number;
+  /** the bar where the two-bar breakdown (no drums) starts; the middle of the song if not set */
+  breakdownAt?: number;
 }
 interface MusicalEvent { kind: Voice; time: number; duration: number; midi: number; gain: number; seed: number }
 const recipes = new Map<string, Recipe>(songData.map(record => [record.recipe.id, record.recipe]));
@@ -22,7 +26,7 @@ function* arrangement(recipe: Recipe): Generator<MusicalEvent> {
     ({ kind, time, duration, midi, gain, seed: seed >>> 0 });
   for (let bar = 0; bar < recipe.bars; bar++) {
     const chord = progression[Math.floor(bar / 2) % 4];
-    const middle = Math.floor(recipe.bars / 2);
+    const middle = recipe.breakdownAt ?? Math.floor(recipe.bars / 2);
     const breakdown = bar >= middle && bar < middle + 2;
     const intro = bar < 2;
     const outro = bar === recipe.bars - 1;
@@ -108,6 +112,11 @@ function voiceSamples(event: MusicalEvent): Float64Array {
 export async function renderSong(song: Song, ctx: AudioContext): Promise<AudioBuffer> {
   const recipe = recipes.get(song.id);
   if (!recipe) throw new Error(`No original composition found for ${song.id}`);
+  return renderRecipe(recipe, ctx);
+}
+
+/** Render any recipe (the soundtrack's, or one made in code like the tutorial's). */
+export async function renderRecipe(recipe: Recipe, ctx: Pick<BaseAudioContext, 'createBuffer'>): Promise<AudioBuffer> {
   // Let the loading screen paint before starting the deterministic rendering.
   await new Promise<void>(resolve => setTimeout(resolve, 0));
   const duration = LEAD_IN + recipe.bars * 4 * 60 / recipe.bpm + 0.5;

@@ -18,6 +18,8 @@ export function setAccountLoaded(loaded: boolean, state = '') {
   accountLoaded = loaded;
   syncState = state;
 }
+/** has the logged-in account's own save been read? (the tutorial never offers itself on a guess) */
+export const accountReady = () => accountLoaded;
 
 async function flush() {
   timer = undefined;
