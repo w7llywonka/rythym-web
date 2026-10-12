@@ -4,13 +4,12 @@
 // for who sees what are in src/onboarding.ts.
 import { TAGS } from '../../shared/cosmetics.js';
 import { ease, pop } from '../anim.ts';
-import { api } from '../api.ts';
 import { LATEST } from '../changelog.ts';
 import { DEFAULT_SETTINGS, T } from '../config.ts';
 import type { Run } from '../game.ts';
 import {
   INTRO_CUE, STAGES, TUTORIAL_ID, TUTORIAL_RECIPE, TUTORIAL_SET, cueAt, friendlyName, isFirstTimer, onboardingStep,
-  stageVerdict, tutorialChart, tutorialTrack, tutorialVerdict, type Cue,
+  stageVerdict, tutorialCanStart, tutorialChart, tutorialTrack, tutorialVerdict, type Cue,
 } from '../onboarding.ts';
 import { formatNumber, keyName } from '../scoring.ts';
 import { renderRecipe } from '../synthesis.ts';
@@ -18,6 +17,7 @@ import type { Track } from '../types.ts';
 import { $, button, frame, label, panel, show, txt } from '../ui.ts';
 import { desktop } from './desktop.ts';
 import { refreshHome } from './home.ts';
+import { syncLook } from './locker.ts';
 import { startRun } from './play.ts';
 import { playPreview } from './preview.ts';
 import { accountReady, queueSave } from './save.ts';
@@ -25,7 +25,7 @@ import { setTab } from './select.ts';
 import { audio, game } from './services.ts';
 import { closeModal, go, isOpen, onClick, openModal, showToast } from './shell.ts';
 import { S, settings } from './state.ts';
-import { announceNewUnlocks, lookForServer, unlockedKeys } from './unlocks.ts';
+import { announceNewUnlocks, unlockedKeys } from './unlocks.ts';
 import { markWhatsNewSeen, openWhatsNew, seenVersion } from './whatsnew.ts';
 
 const OFFERED_KEY = 'lineRush.tutorialOffered';
@@ -33,6 +33,22 @@ const GRADUATE = TAGS.find(t => t.id === 'graduate')!;
 const offered = () => { try { return localStorage.getItem(OFFERED_KEY) === '1'; } catch { return false; } };
 const markOffered = () => { try { localStorage.setItem(OFFERED_KEY, '1'); } catch { /* private mode */ } };
 const motion = () => !settings().reduceMotion;
+
+/** a greeting with a long name in it gets smaller until it fits on its line (measured, so it needs to be shown) */
+function fitName(el: HTMLElement, size: number) {
+  const tx = el.querySelector(':scope > .tx') as HTMLElement;
+  const fit = () => {
+    let s = size;
+    el.style.fontSize = `${s}px`;
+    while (s > 18 && tx.scrollWidth > tx.clientWidth) {
+      s = Math.max(18, Math.min(s - 1, Math.floor((s * tx.clientWidth) / tx.scrollWidth)));
+      el.style.fontSize = `${s}px`;
+    }
+  };
+  fit();
+  // and again once the font has loaded, if it hadn't yet
+  void document.fonts?.ready.then(fit);
+}
 
 /** the computer's account name in the app ("Alex"), '' on the website */
 let osName = '';
@@ -150,6 +166,11 @@ export async function startTutorial() {
   try {
     if (!audio.hasBuffer(TUTORIAL_ID)) showToast('Getting the tutorial ready...');
     await prepareAudio();
+    // the menus keep working while it renders: if they've moved on (a song, another screen or panel), leave them be
+    if (!tutorialCanStart({ screen: S.screen, running: !!game.run, transitioning: S.transitioning, panel: !!S.modal })) {
+      showToast('The tutorial is ready. Press TUTORIAL to start it.');
+      return;
+    }
     track ??= tutorialTrack();
     await startRun(track, 'Easy', false, { tutorial: true, set: TUTORIAL_SET });
   } catch {
@@ -284,11 +305,14 @@ function enterRun(r: Run) {
   const style = $('game.left.style');
   txt(style, "TUTORIAL  ·  CAN'T FAIL");
   style.style.color = T.cyan;
+  // you can't fail it, so no health bar draining away
+  show($('game.health'), false);
 }
 
 function leaveRun() {
   current = null;
   show($('game.tut'), false);
+  show($('game.health'), true);
   setSpot(0);
 }
 
@@ -349,7 +373,10 @@ export function finishTutorial(r: Run) {
   ];
   tips.forEach((text, i) => txt($(`tutend.tips.tip${i + 1}.text`), text));
   txt($('tutend.play'), first ? 'PLAY YOUR FIRST SONG' : 'PLAY A SONG');
-  void go('home', () => openModal($('tutend')));
+  void go('home', () => {
+    openModal($('tutend'));
+    fitName($('tutend.title'), 34);
+  });
   // the end screen shows off the GRADUATE tag itself: toast anything else this unlocked
   before.add(`tag:${GRADUATE.id}`);
   announceNewUnlocks(before);
@@ -375,6 +402,7 @@ export function openWelcome() {
   mini.classList.toggle('still', !motion());
   markOffered();
   openModal($('welcome'));
+  fitName($('welcome.name'), 44);
   // have the song ready by the time they click START
   void prepareAudio().catch(() => {});
 }
@@ -423,7 +451,7 @@ export function initTutorial() {
     queueSave();
     refreshWear();
     refreshHome();
-    if (S.account) void api.setLook(lookForServer());
+    syncLook(0);
   });
   // sits right of the APP / GET THE APP button (narrower in the app)
   const app = $('home.app');

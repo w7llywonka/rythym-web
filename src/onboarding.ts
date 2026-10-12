@@ -198,6 +198,12 @@ export function onboardingStep(s: OnboardingState): { show: 'welcome' | 'whatsne
   return newerVersion(s.latest, s.seenVersion) ? { show: 'whatsnew', markSeen: true } : { show: null, markSeen: false };
 }
 
+/** where the player is once the tutorial's music has rendered (the menus keep working while it does) */
+export interface TutorialStartState { screen: string; running: boolean; transitioning: boolean; panel: boolean }
+
+/** it starts only if they're still where they asked for it: on home, no song, no screen change, no panel open */
+export const tutorialCanStart = (s: TutorialStartState) => s.screen === 'home' && !s.running && !s.transitioning && !s.panel;
+
 const GENERIC_NAMES = new Set(['user', 'users', 'admin', 'administrator', 'root', 'owner', 'guest', 'default', 'player', 'home', 'test', 'nobody', 'pc', 'me']);
 
 /**

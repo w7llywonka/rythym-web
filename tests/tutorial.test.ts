@@ -5,8 +5,8 @@ import { CHANGELOG, LATEST, formatDate, newerVersion } from '../src/changelog.ts
 import { K, MODES } from '../src/config.ts';
 import {
   INTRO_CUE, SETTLE, STAGES, TUTORIAL_ID, TUTORIAL_LENGTH, TUTORIAL_RECIPE, TUTORIAL_SET, beatTime, cueAt, friendlyName,
-  isFirstTimer, onboardingStep, stageEnd, stageStart, stageVerdict, tutorialChart, tutorialTrack, tutorialVerdict,
-  type OnboardingState,
+  isFirstTimer, onboardingStep, stageEnd, stageStart, stageVerdict, tutorialCanStart, tutorialChart, tutorialTrack,
+  tutorialVerdict, type OnboardingState,
 } from '../src/onboarding.ts';
 import { setMultiplier } from '../src/scoring.ts';
 import { songs } from '../src/songs.ts';
@@ -184,6 +184,17 @@ test("onboarding: What's New once per version", () => {
   assert.ok(!newerVersion('1.1', '1.1'));
   assert.ok(!newerVersion('1.1', '1.1.0'));
   assert.ok(!newerVersion('1.1', '1.2'));
+});
+
+test('tutorial start: only if the player is still on home once its music is ready', () => {
+  const home = { screen: 'home', running: false, transitioning: false, panel: false };
+  assert.equal(tutorialCanStart(home), true);
+  // they pressed PLAY while it rendered: never replace their song or pull them off another screen
+  assert.equal(tutorialCanStart({ ...home, screen: 'select' }), false);
+  assert.equal(tutorialCanStart({ ...home, screen: 'game', running: true }), false);
+  assert.equal(tutorialCanStart({ ...home, running: true }), false);
+  assert.equal(tutorialCanStart({ ...home, transitioning: true }), false);
+  assert.equal(tutorialCanStart({ ...home, panel: true }), false);
 });
 
 test('changelog: newest first, well formed, and the latest matches the app', () => {
