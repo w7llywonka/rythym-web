@@ -33,6 +33,19 @@ const COMMON = new Set(['1234567890', '0123456789', '12345678910', '123456789a',
 const scrypt = (password, salt, { N, r, p }) => new Promise((resolve, reject) =>
   scryptCb(password, salt, 32, { N, r, p, maxmem: 256 * 1024 * 1024 }, (err, key) => (err ? reject(err) : resolve(key))));
 const sha256 = s => createHash('sha256').update(s).digest('hex');
+const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** a save's format version (SaveData.v in src/storage.ts; saves from before 1.1 have none) */
+const saveVersion = d => (Number.isSafeInteger(d.v) && d.v > 0 ? d.v : 0);
+/**
+ * A save from an older game than the stored one (e.g. the 1.0 app after playing on 1.1) only has the
+ * fields that game knows: its values win, everything else in the stored save is kept.
+ */
+function mergeOlder(stored, data) {
+  const out = { ...stored, ...data, v: stored.v };
+  for (const k of ['profile', 'settings']) if (isObj(stored[k]) && isObj(data[k])) out[k] = { ...stored[k], ...data[k] };
+  return out;
+}
 
 export function checkUsername(name) {
   if (typeof name !== 'string' || !USERNAME.test(name)) return 'Usernames are 3-20 letters, numbers or _.';
@@ -212,8 +225,11 @@ export function createAuth(store, options = {}) {
       const s = await requireSession(req);
       const lower = s.user.username.toLowerCase();
       await limit(`save:${lower}`, 60, 600, 'Saving too often. Your progress will sync in a moment.');
-      const data = req.body.data;
-      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new HttpError(400, 'Invalid save.');
+      let data = req.body.data;
+      if (!isObj(data)) throw new HttpError(400, 'Invalid save.');
+      const old = await store.get(`save:${lower}`);
+      const stored = old ? JSON.parse(old).data : null;
+      if (isObj(stored) && saveVersion(data) < saveVersion(stored)) data = mergeOlder(stored, data);
       const updatedAt = now();
       const raw = JSON.stringify({ data, updatedAt });
       if (raw.length > MAX_SAVE) throw new HttpError(413, 'Save is too large.');
@@ -288,8 +304,20 @@ export function parseCookies(header) {
   return out;
 }
 
+/**
+ * The client's address. Each proxy in front of the server adds the address it saw to the end of
+ * X-Forwarded-For, so the client is `hops` entries from the end. Entries before that are whatever the
+ * client sent: trusting them would let anyone get around every per-IP limit with a made-up address.
+ * TRUST_PROXY_HOPS is how many proxies there are (default 1: Railway, Vercel, or one nginx).
+ */
+export function clientIp(headers, socketAddress, hops) {
+  const chain = String(headers['x-forwarded-for'] ?? '').split(',').map(s => s.trim()).filter(Boolean);
+  if (hops > 0 && chain.length) return chain[Math.max(0, chain.length - hops)];
+  return socketAddress || 'unknown';
+}
+
 /** Turn a Node IncomingMessage into the handler's request shape. */
-export async function fromNode(req, path, { trustProxy }) {
+export async function fromNode(req, path, { trustProxy, proxyHops = process.env.TRUST_PROXY_HOPS }) {
   const headers = {};
   for (const [k, v] of Object.entries(req.headers)) headers[k] = Array.isArray(v) ? v.join(', ') : v;
   let size = 0;
@@ -301,8 +329,7 @@ export async function fromNode(req, path, { trustProxy }) {
       chunks.push(chunk);
     }
   }
-  const forwarded = trustProxy ? String(headers['x-forwarded-for'] ?? '').split(',')[0].trim() : '';
-  const ip = forwarded || headers['x-real-ip'] || req.socket?.remoteAddress || 'unknown';
+  const ip = clientIp(headers, req.socket?.remoteAddress, trustProxy ? Math.max(1, Math.floor(Number(proxyHops)) || 1) : 0);
   const host = String(headers.host ?? '');
   const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host);
   const secure = trustProxy ? !local : false;

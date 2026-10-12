@@ -3,7 +3,7 @@
 import { K, MODES, STAR_COLORS, T, TAB_INFO, TAB_ORDER, type Pack, type Tab } from '../config.ts';
 import { importSong, retimeImport } from '../custom.ts';
 import { currentSet, fmtTime, formatNumber, gradeColor, setMultiplier, setSummary } from '../scoring.ts';
-import { dropImportProgress } from '../storage.ts';
+import { dropImportProgress, fromOlderSave } from '../storage.ts';
 import { trackFromImport } from '../tracks.ts';
 import type { Track } from '../types.ts';
 import { $, rgba, show, txt } from '../ui.ts';
@@ -14,9 +14,10 @@ import { playPreview } from './preview.ts';
 import { audio } from './services.ts';
 import { loadImportAudio, loadImports, removeImport, saveImport, updateImportSong } from './importStore.ts';
 import { queueSave } from './save.ts';
-import { go, onClick, setAmbient, showToast } from './shell.ts';
+import { closeModal, go, onClick, setAmbient, showToast } from './shell.ts';
 import { S, bestKey, chartFor, packOf, setTracks, settings } from './state.ts';
 import { openStyle } from './stylePanel.ts';
+import { announceNewUnlocks, unlockedKeys } from './unlocks.ts';
 
 function songsFor(tab: Tab): Track[] {
   if (tab === 'Recent') {
@@ -253,9 +254,39 @@ export async function importFile(file: File) {
     showToast(imported.warning ?? (kept
       ? `${t.title} added to ${MODES[t.difficulty].label} and saved on this computer. Tempo off? Use ½× or 2× under the BPM.`
       : `${t.title} added to ${MODES[t.difficulty].label} (couldn't save it on this computer, so it's here until you close the tab)`));
+    // a new song (not the same file again) counts toward the DJ tag
+    if (!old) {
+      const before = unlockedKeys();
+      S.data.profile.imports++;
+      queueSave();
+      announceNewUnlocks(before);
+    }
   } catch (e) {
     showToast(e instanceof Error ? e.message : "Couldn't import that file.");
   }
+}
+
+// ---- dropping audio files on the game -----------------------------------------------------------
+const MAX_DROP = 10;
+let dropping = false;
+
+/** files dropped anywhere on the game are imported one after another, in song select */
+function importDropped(files: File[]) {
+  if (S.screen === 'game') return showToast('Finish the song first, then drop the file again.');
+  if (dropping || S.transitioning) return showToast('Still adding songs. Drop it again in a moment.');
+  closeModal();
+  const run = async () => {
+    dropping = true;
+    try {
+      for (const file of files.slice(0, MAX_DROP)) {
+        if (S.screen !== 'select') return; // a song started: the rest can be dropped again later
+        await importFile(file);
+      }
+      if (files.length > MAX_DROP) showToast(`Added the first ${MAX_DROP} files. Drop the others again to add them.`);
+    } finally { dropping = false; }
+  };
+  if (S.screen === 'select') void run();
+  else void go('select', () => { setTab(S.tab, true); void run(); });
 }
 
 /** bring back the songs imported on this computer */
@@ -267,7 +298,25 @@ async function restoreImports() {
   setTracks([...S.tracks.filter(t => !restored.some(r => r.id === t.id)), ...restored]);
   for (const tab of TAB_ORDER) S.selectedSong[tab] ??= songsFor(tab)[0];
   if (S.screen === 'select') buildList();
+  creditImports();
   void upgradeImports();
+}
+
+/**
+ * Songs imported before imports were counted still count: the import count is at least the number of
+ * songs imported on this computer (called once they're restored, and when an account's save loads).
+ * Only for the guest save, or as a one-time catch-up for a save from before 1.1: an account that
+ * already counts its own imports never takes on what someone else imported on this computer.
+ */
+export function creditImports() {
+  if (S.account && !fromOlderSave(S.data)) return;
+  const p = S.data.profile;
+  const here = S.tracks.filter(t => t.custom).length;
+  if (p.imports >= here) return;
+  const before = unlockedKeys();
+  p.imports = here;
+  queueSave();
+  announceNewUnlocks(before);
 }
 
 /**
@@ -379,6 +428,19 @@ export function initSelect() {
     const file = fileInput.files?.[0];
     fileInput.value = '';
     if (file) void importFile(file);
+  });
+  // a file dropped on the page is imported, never opened in place of the game
+  const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files');
+  window.addEventListener('dragover', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = S.screen === 'game' ? 'none' : 'copy';
+  });
+  window.addEventListener('drop', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    const files = [...e.dataTransfer!.files];
+    if (files.length) importDropped(files);
   });
 
   for (const tab of TAB_ORDER) S.selectedSong[tab] = songsFor(tab)[0];

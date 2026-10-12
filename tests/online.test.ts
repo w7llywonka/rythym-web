@@ -4,16 +4,32 @@ import { readFileSync } from 'node:fs';
 import { createAuth } from '../api/_lib/core.js';
 import { memoryStore } from '../api/_lib/store.js';
 import { currentWeek, pickWeekly } from '../shared/weekly.js';
+import { NAME_COLORS, TAGS, TITLES } from '../shared/cosmetics.js';
 import { soundtrack } from '../src/tracks.ts';
 import { chartObjects } from '../scripts/chart-objects.ts';
 
 // Test-only accounts in an in-memory store.
 const PASS = 'velvet-harbor-58-comet';
 
+type Store = ReturnType<typeof memoryStore>;
+/** the store, plus a log of the store calls the server makes (round trips) */
+function logged(store: Store) {
+  const calls: string[] = [];
+  const spy = new Proxy(store, {
+    get(target, k) {
+      const v = (target as Record<string | symbol, unknown>)[k];
+      return typeof v === 'function' ? (...a: unknown[]) => { calls.push(String(k)); return v.apply(target, a); } : v;
+    },
+  });
+  return { spy, calls };
+}
+
 function setup() {
   let clock = Date.UTC(2026, 9, 7, 12) as number;
   const now = () => clock;
-  const handle = createAuth(memoryStore({ now }), { scrypt: { N: 1024, r: 8, p: 1 }, now });
+  const store = memoryStore({ now });
+  const { spy, calls } = logged(store);
+  const handle = createAuth(spy, { scrypt: { N: 1024, r: 8, p: 1 }, now });
   let ip = 0;
   const client = (cookie = '') => {
     const addr = `10.2.0.${++ip}`;
@@ -33,7 +49,7 @@ function setup() {
     assert.equal((await call('POST', 'auth/register', { username, password: PASS })).status, 201);
     return call;
   };
-  return { player, guest: client(), tick: (ms: number) => { clock += ms; }, now };
+  return { player, guest: client(), tick: (ms: number) => { clock += ms; }, now, store, calls };
 }
 
 test('shared/chart-objects.json matches the chart generator (run `npm run charts` if not)', () => {
@@ -124,4 +140,204 @@ test('the live feed and King of the Hill', async () => {
   assert.equal((await b('POST', 'auth/delete', { password: PASS })).status, 200);
   r = await guest('GET', 'scores/board', undefined, { weekly: '1' });
   assert.deepEqual(r.body.entries.map((e: { name: string }) => e.name), ['ann_lb']);
+});
+
+// ---- looks: title, tag and name color -------------------------------------------------------------
+
+const RUN = { songId: 'current', diff: 'Hard', grade: 'A', fc: false };
+type Entry = { name: string; title: string; tag: string; color: string };
+const looksOf = (entries: Entry[]) => entries.map(e => [e.name, e.title, e.tag, e.color]);
+
+test("looks: only titles, tag and name color ids from the shared lists; absent fields are kept, '' clears", async () => {
+  const { player, guest, store, tick } = setup();
+  const p = await player('dana_look');
+  // a minute apart, so the many changes here stay under the rate limit
+  const look = async (body: object) => { tick(60_000); return (await p('POST', 'profile/look', body)).body.look; };
+  assert.equal((await guest('POST', 'profile/look', { tag: 'veteran' })).status, 401);
+
+  const r = await p('POST', 'profile/look', { title: 'Rookie', tag: 'veteran', color: 'gold' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { ok: true, look: { title: 'Rookie', tag: 'veteran', color: 'gold' } });
+  assert.deepEqual(await look({ tag: 'duelist' }), { title: 'Rookie', tag: 'duelist', color: 'gold' }, 'absent fields keep their value');
+  assert.deepEqual(await look({ title: '' }), { title: '', tag: 'duelist', color: 'gold' }, "'' clears");
+  assert.deepEqual(await look({}), { title: '', tag: 'duelist', color: 'gold' });
+  assert.deepEqual(await look({ color: 'default' }), { title: '', tag: 'duelist', color: '' }, 'white is no color');
+
+  // anything that isn't an id from the lists is stored (and sent) as nothing
+  for (const bad of ['<img src=x onerror=alert(1)>', 'VETERAN', ' veteran', '__proto__', 'constructor', 'toString', 42, true, null, ['veteran'], { id: 'veteran' }]) {
+    await look({ tag: 'legend', color: 'sky' });
+    assert.deepEqual(await look({ tag: bad, color: bad }), { title: '', tag: '', color: '' }, JSON.stringify(bad));
+  }
+  // a title is exactly one an achievement gives, never text a player typed
+  for (const bad of ['Line Rush Staff', 'Official Moderator', 'Admin', 'rookie', ' Rookie', 'Rookie!', '<script>alert("hi")</script>', 'x'.repeat(100), '__proto__', 42, ['Rookie']]) {
+    await look({ title: 'Godlike' });
+    assert.equal((await look({ title: bad })).title, '', JSON.stringify(bad));
+  }
+  for (const title of TITLES) assert.equal((await look({ title })).title, title);
+  // nothing else from the request is kept
+  await look({ title: 'Rookie', tag: 'og', color: 'aurora', name: 'admin', html: '<b>' });
+  assert.deepEqual(JSON.parse((await store.get('look:dana_look'))!), { title: 'Rookie', tag: 'og', color: 'aurora' });
+});
+
+test("boards carry each player's title, tag and name color (the old title key is a fallback)", async () => {
+  const { player, guest, tick, store } = setup();
+  const amy = await player('amy_look'), bo = await player('bo_look'), cy = await player('cy_look');
+  const board = async () => (await guest('GET', 'scores/board', undefined, { songId: 'current', diff: 'Hard' })).body.entries as Entry[];
+
+  // an up-to-date game sends the look with the score
+  tick(4000);
+  await amy('POST', 'scores/submit', { ...RUN, score: 7000, title: 'Rookie', tag: 'veteran', color: 'aurora' });
+  // a game from before 1.1 only sends the title: the tag and color set in the Locker stay
+  await bo('POST', 'profile/look', { tag: 'duelist', color: 'rose' });
+  tick(4000);
+  await bo('POST', 'scores/submit', { ...RUN, score: 6000, title: 'Centurion' });
+  // cy's score and title are from before looks existed
+  await store.zbest('lb:current:Hard', 5000, 'cy_look');
+  await store.sadd('boards:cy_look', 'lb:current:Hard');
+  await store.set('title:cy_look', 'Hard Hitter');
+
+  assert.deepEqual(looksOf(await board()), [
+    ['amy_look', 'Rookie', 'veteran', 'aurora'], ['bo_look', 'Centurion', 'duelist', 'rose'], ['cy_look', 'Hard Hitter', '', ''],
+  ]);
+  assert.deepEqual(Object.keys((await board())[0]), ['rank', 'name', 'title', 'tag', 'color', 'score']);
+  // an old title that isn't an achievement's is dropped on the way out too
+  await store.set('title:cy_look', 'Line Rush Staff');
+  assert.equal((await board())[2].title, '');
+  await store.set('title:cy_look', 'Hard Hitter');
+
+  // a score with no look at all keeps the old title in the new look; after that the look wins
+  tick(4000);
+  await cy('POST', 'scores/submit', { ...RUN, score: 5500 });
+  assert.deepEqual(JSON.parse((await store.get('look:cy_look'))!), { title: 'Hard Hitter', tag: '', color: '' });
+  await cy('POST', 'profile/look', { title: '' });
+  assert.equal((await board())[2].title, '', 'a cleared title stays cleared');
+
+  // ids that aren't in the lists are cleared, from scores too
+  tick(4000);
+  await amy('POST', 'scores/submit', { ...RUN, score: 100, title: 'Rookie', tag: 'hacker', color: '#FF0000' });
+  assert.deepEqual(looksOf(await board())[0], ['amy_look', 'Rookie', '', '']);
+
+  // whatever is in the store is checked again on the way out
+  await store.set('look:bo_look', JSON.stringify({ title: '<b>Hi</b>', tag: '<script>', color: 'url(javascript:alert(1))', extra: 'x' }));
+  await store.set('look:cy_look', 'not json');
+  const [, bo2, cy2] = await board();
+  assert.deepEqual([bo2.title, bo2.tag, bo2.color, 'extra' in bo2], ['', '', '', false]);
+  assert.equal(cy2.title, 'Hard Hitter', 'an unreadable look falls back to the old title');
+});
+
+test('the live feed shows the tag and name color a player had at that moment', async () => {
+  const { player, guest, tick, store } = setup();
+  const eve = await player('eve_look');
+  await store.sadd('earned:eve_look', 'king'); // King of the Hill some earlier week
+  await eve('POST', 'profile/look', { tag: 'king', color: 'royal' });
+  tick(4000);
+  const r = await eve('POST', 'scores/submit', { ...RUN, score: 3000, title: '' });
+  assert.equal(r.body.chart.tookTop, true);
+  await eve('POST', 'profile/look', { tag: '', color: 'sky' }); // later changes don't rewrite the feed
+
+  // a line from before tags, one with junk in it, and ones that aren't usable at all
+  await store.lpushCapped('feed', JSON.stringify({ kind: 'ss', user: 'old_timer', song: 'Afterglow', diff: 'HARD', at: 1 }), 20);
+  await store.lpushCapped('feed', JSON.stringify({ kind: 'fc', user: 'x_look', song: 'y', diff: 'EXPERT', at: 2, tag: '<img>', color: 'url(x)', html: '<b>' }), 20);
+  await store.lpushCapped('feed', '{oops', 20);
+  await store.lpushCapped('feed', 'null', 20);
+
+  const items = (await guest('GET', 'scores/feed')).body.items as Array<Record<string, unknown>>;
+  assert.deepEqual(items.map(i => [i.user, i.tag, i.color]), [['x_look', '', ''], ['old_timer', '', ''], ['eve_look', 'king', 'royal']]);
+  for (const i of items) assert.deepEqual(Object.keys(i), ['kind', 'user', 'song', 'diff', 'at', 'tag', 'color']);
+});
+
+test("looks: '#1', KING and Royal only for players the server saw earn them; the rest is self-reported", async () => {
+  const { player, tick, now, store } = setup();
+  const kim = await player('kim_look'), lee = await player('lee_look');
+  const look = async (body: object) => { tick(60_000); return (await kim('POST', 'profile/look', body)).body.look; };
+  const submit = async (call: typeof kim, body: object) => { tick(4000); return (await call('POST', 'scores/submit', body)).body; };
+  const stored = async () => JSON.parse((await store.get('look:kim_look'))!);
+
+  // a brand-new account can wear any other tag or color from the lists, but not these three
+  const refused: string[] = [];
+  for (const t of TAGS) if ((await look({ tag: t.id })).tag !== t.id) refused.push(`tag:${t.id}`);
+  for (const c of NAME_COLORS) if ((await look({ color: c.id })).color !== (c.id === 'default' ? '' : c.id)) refused.push(`color:${c.id}`);
+  assert.deepEqual(refused, ['tag:top1', 'tag:king', 'color:royal']);
+
+  // not with a score either; lee is #1 first, so kim's score doesn't take it
+  assert.equal((await submit(lee, { ...RUN, score: 5000 })).chart.tookTop, true);
+  assert.equal((await submit(kim, { ...RUN, score: 4000, tag: 'top1', color: 'royal' })).chart.tookTop, false);
+  assert.deepEqual(await stored(), { title: '', tag: '', color: '' });
+
+  // taking #1 unlocks '#1', not KING or Royal
+  assert.equal((await submit(kim, { ...RUN, score: 6000 })).chart.tookTop, true);
+  assert.deepEqual(await look({ tag: 'top1', color: 'royal' }), { title: '', tag: 'top1', color: '' });
+  assert.equal((await look({ tag: 'king' })).tag, '');
+
+  // King of the Hill unlocks both, and they then go along with scores
+  const { week } = currentWeek(now() / 1000);
+  const pick = pickWeekly(week, soundtrack())!;
+  const weeklyRun = { songId: pick.song.id, diff: pick.song.difficulty, weekly: week, style: pick.mods.style, rate: pick.mods.rate, grade: 'A', fc: false };
+  assert.equal((await submit(kim, { ...weeklyRun, score: 3000 })).weekly.tookTop, true);
+  assert.deepEqual(await look({ tag: 'king', color: 'royal' }), { title: '', tag: 'king', color: 'royal' });
+  await submit(kim, { ...RUN, score: 100, title: 'Rookie', tag: 'king', color: 'royal' });
+  assert.deepEqual(await stored(), { title: 'Rookie', tag: 'king', color: 'royal' });
+  assert.deepEqual((await store.smembers('earned:kim_look')).sort(), ['king', 'top1']);
+  assert.deepEqual(await store.smembers('earned:lee_look'), ['top1']);
+});
+
+test('looks: changes are rate limited per player', async () => {
+  const { player, tick } = setup();
+  const fay = await player('fay_look'), gus = await player('gus_look');
+  for (let i = 0; i < 30; i++) assert.equal((await fay('POST', 'profile/look', { tag: i % 2 ? 'veteran' : '' })).status, 200);
+  const r = await fay('POST', 'profile/look', { tag: 'elite' });
+  assert.equal(r.status, 429);
+  assert.match(r.body.error, /too often/);
+  assert.equal((await gus('POST', 'profile/look', { tag: 'veteran' })).status, 200, 'other players are not affected');
+  tick(601_000);
+  const after = await fay('POST', 'profile/look', {});
+  assert.equal(after.status, 200, 'the window ends');
+  assert.equal(after.body.look.tag, 'veteran', 'the refused change was not saved');
+});
+
+test('deleting an account removes its look and what it earned', async () => {
+  const { player, guest, tick, store } = setup();
+  const hal = await player('hal_look');
+  await hal('POST', 'profile/look', { title: 'Rookie', tag: 'veteran', color: 'gold' });
+  await store.set('title:hal_look', 'Rookie'); // an old title key too
+  tick(4000);
+  await hal('POST', 'scores/submit', { ...RUN, score: 900, title: 'Rookie' });
+  assert.deepEqual(await store.smembers('earned:hal_look'), ['top1']);
+  assert.equal((await hal('POST', 'auth/delete', { password: PASS })).status, 200);
+  assert.deepEqual(await store.mget('look:hal_look', 'title:hal_look'), [null, null]);
+  assert.deepEqual(await store.smembers('earned:hal_look'), []);
+
+  // someone new with the same name starts plain
+  const again = await player('hal_look');
+  tick(4000);
+  await again('POST', 'scores/submit', { ...RUN, score: 10 });
+  const r = await guest('GET', 'scores/board', undefined, { songId: 'current', diff: 'Hard' });
+  assert.deepEqual(looksOf(r.body.entries), [['hal_look', '', '', '']]);
+});
+
+test('looks cost no extra store round trips', async () => {
+  const { player, guest, tick, calls } = setup();
+  const players = [await player('ia_look'), await player('jo_look'), await player('ki_look')];
+  for (const [i, p] of players.entries()) {
+    tick(4000);
+    await p('POST', 'scores/submit', { ...RUN, score: 1000 * (i + 1), title: 'Rookie', tag: 'veteran', color: 'gold' });
+  }
+  calls.length = 0;
+  await guest('GET', 'scores/board', undefined, { songId: 'current', diff: 'Hard' });
+  assert.deepEqual(calls, ['ztop', 'mget'], 'one mget for every title, tag and color on the board');
+
+  // a full look sent with a score is written without reading the old one; a partial one reads it once
+  calls.length = 0;
+  tick(4000);
+  await players[0]('POST', 'scores/submit', { ...RUN, score: 5000, title: 'Rookie', tag: 'og', color: 'sky' });
+  assert.ok(!calls.includes('mget') && !calls.includes('smembers'), calls.join());
+  calls.length = 0;
+  tick(4000);
+  await players[0]('POST', 'scores/submit', { ...RUN, score: 6000, title: 'Rookie' });
+  assert.equal(calls.filter(c => c === 'mget').length, 1, calls.join());
+  // '#1', KING and Royal cost one read of what the player earned
+  calls.length = 0;
+  tick(4000);
+  await players[1]('POST', 'scores/submit', { ...RUN, score: 100, title: 'Rookie', tag: 'top1', color: 'royal' });
+  assert.equal(calls.filter(c => c === 'smembers').length, 1, calls.join());
 });

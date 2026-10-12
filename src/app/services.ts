@@ -5,12 +5,14 @@ import { Game } from '../game.ts';
 import { finishRun } from './results.ts';
 import { go, showToast } from './shell.ts';
 import { S, settings } from './state.ts';
+import { activeHitEffect, activeNoteStyle } from './unlocks.ts';
 import { vsLoadFailed } from './versus.ts';
 
 export const audio = new AudioEngine();
 
 export const game = new Game(audio, {
   settings,
+  look: () => ({ noteStyle: activeNoteStyle(), hitEffect: activeHitEffect() }),
   onFinish: (r, cleared) => finishRun(r, cleared),
   onLoadFail: r => {
     // a 1v1 is forfeited, so the opponent isn't left waiting minutes for the timeout

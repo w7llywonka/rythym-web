@@ -7,8 +7,15 @@ import https from 'node:https';
 export const MAX_BODY = 1024 * 1024;
 const OFFLINE = "Online play is off in this app. Set the server under APP on the home screen to log in, see leaderboards and play 1v1. You can still play as a guest.";
 
+// whatever comes back is data for the game, never a page: even if an /api address were opened in the
+// window, nothing in it could run on the app's origin (where the desktop calls are)
+const API_HEADERS = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox" };
+// the only cookie the game needs is the server's login. Others (a CDN's, a load balancer's) are
+// ignored, so they can't replace or clear it.
+export const SESSION_COOKIE = /^(__Host-)?lr_session$/;
+
 const json = (status, body) => new Response(JSON.stringify(body), {
-  status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  status, headers: { ...API_HEADERS, 'Content-Type': 'application/json' },
 });
 
 /** "https://example.com/anything" -> "https://example.com"; http only for this computer (local testing) */
@@ -73,6 +80,7 @@ export function createApiProxy({ server, vault, userAgent = 'LineRush-Desktop', 
     if (body && body.length > MAX_BODY) return json(413, { error: 'That request is too large.' });
 
     const target = new URL(url.pathname + url.search, base);
+    if (target.origin !== base || !target.pathname.startsWith('/api/')) return json(400, { error: 'Bad request.' });
     const headers = { 'User-Agent': userAgent, Accept: 'application/json' };
     for (const name of ['x-linerush', 'content-type']) {
       const v = request.headers.get(name);
@@ -91,11 +99,12 @@ export function createApiProxy({ server, vault, userAgent = 'LineRush-Desktop', 
     }
     for (const header of [res.headers['set-cookie'] ?? []].flat()) {
       const c = parseSetCookie(header, now());
-      if (c) vault.set(base, c.cookie ? { cookie: c.cookie, expires: c.expires } : null);
+      if (c && SESSION_COOKIE.test(c.name)) vault.set(base, c.cookie ? { cookie: c.cookie, expires: c.expires } : null);
     }
+    const type = String(res.headers['content-type'] ?? 'application/json');
     return new Response(res.status === 204 || res.status === 304 ? null : res.body, {
       status: res.status,
-      headers: { 'Content-Type': String(res.headers['content-type'] ?? 'application/json'), 'Cache-Control': 'no-store' },
+      headers: { ...API_HEADERS, 'Content-Type': /^application\/json\b/i.test(type) ? type : 'text/plain; charset=utf-8' },
     });
   };
 }

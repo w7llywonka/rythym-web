@@ -93,7 +93,8 @@ button.f:focus-visible { outline: 2px solid rgba(43, 212, 255, .7); outline-offs
 .dimmer { transition: opacity .2s; opacity: 0; pointer-events: none; }
 .dimmer.on { opacity: .72; pointer-events: auto; }
 .fader { opacity: 0; transition: opacity .15s; }
-.toast { box-shadow: 0 0 0 1px #25252E, 0 12px 40px rgba(0, 0, 0, .5); }
+/* a toast never takes a click meant for what's under it; it moves up on results (shell.ts showScreen) */
+.toast { box-shadow: 0 0 0 1px #25252E, 0 12px 40px rgba(0, 0, 0, .5); pointer-events: none; transition: top .25s; }
 
 /* playfield */
 .heldbeam { opacity: 0; transition: opacity .06s; }
@@ -181,3 +182,290 @@ button.f:focus-visible { outline: 2px solid rgba(43, 212, 255, .7); outline-offs
 .credit div { font-size: 12px; color: #8A8A97; }
 .credit a { color: #2BD4FF; text-decoration: none; }
 .credit a:hover { text-decoration: underline; }
+
+/* ---- tutorial & what's new ---- */
+/* cue card on the game screen: its accent bar takes the color of what it's teaching */
+.tut-card { box-shadow: 0 0 0 1px #25252E, 0 24px 60px -24px rgba(0, 0, 0, .8) !important; background-image: linear-gradient(180deg, rgba(255, 255, 255, .035), rgba(255, 255, 255, 0) 55%); }
+.tut-card.in { animation: tut-in .35s ease-out; }
+@keyframes tut-in { from { opacity: 0; } to { opacity: 1; } }
+.tut-body .tx { line-height: 1.55; color: rgba(244, 244, 246, .86); }
+/* the player's own key, in its lane's color */
+.tut-key {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 23px; padding: 0 7px; margin: 0 1px;
+  border-radius: 7px; font-size: 13px; font-weight: 700; letter-spacing: .02em; color: #F4F4F6; vertical-align: 1px;
+  background: color-mix(in srgb, var(--k) 24%, #15151B);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k) 75%, transparent), 0 2px 0 color-mix(in srgb, var(--k) 40%, #08080A);
+}
+.tut-dots .f { background: #25252E; transition: background-color .2s; }
+.tut-dots .f.done { background: #52525C; }
+.tut-dots .f.on { background: var(--c); box-shadow: 0 0 8px color-mix(in srgb, var(--c) 70%, transparent); }
+/* one pip per line in the stage: lit when hit, red when missed */
+.tut-pips { display: flex; gap: 6px; align-items: center; }
+.tut-pips i { flex: 0 0 auto; width: 16px; height: 8px; border-radius: 4px; background: #1D1D25; box-shadow: inset 0 0 0 1px #2E2E38; transition: background-color .15s, box-shadow .15s, transform .2s cubic-bezier(.34, 1.56, .64, 1); }
+.tut-pips i.hit { background: var(--c); box-shadow: 0 0 10px color-mix(in srgb, var(--c) 60%, transparent); transform: scaleY(1.25); }
+.tut-pips i.miss { background: rgba(255, 107, 122, .5); box-shadow: inset 0 0 0 1px rgba(255, 107, 122, .8); }
+.tut-pips i.holding { background: var(--c); animation: tut-blink .45s ease-in-out infinite alternate; }
+@keyframes tut-blink { from { opacity: .45; } to { opacity: 1; } }
+/* the lane being taught breathes in its color */
+.tut-spot {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c) 65%, transparent), inset 0 -160px 90px -90px color-mix(in srgb, var(--c) 35%, transparent);
+  animation: tut-spot 1.2s ease-in-out infinite alternate; z-index: 5;
+}
+@keyframes tut-spot { from { opacity: .35; } to { opacity: 1; } }
+
+/* welcome card: a little playfield where lines fall to the buttons on a loop (lane colors are the player's) */
+.tut-mini { --c1: #2BD4FF; --c2: #FF5CA8; --cc: #F5C451; background-image: radial-gradient(120% 60% at 50% 100%, rgba(255, 255, 255, .04), transparent); }
+.ml-lane { position: absolute; top: 10px; width: 74px; height: 356px; border-radius: 12px; overflow: hidden; background: linear-gradient(180deg, rgba(21, 21, 27, 0), #15151B 70%); }
+.ml-lane1 { left: 10px; --c: var(--c1); }
+.ml-lane2 { left: 92px; --c: var(--c2); }
+.ml-rec { position: absolute; left: 7px; bottom: 10px; width: 60px; height: 60px; border-radius: 12px; background: color-mix(in srgb, var(--c) 7%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent); }
+.ml-bar { position: absolute; left: 9px; right: 9px; top: 20px; height: 3px; border-radius: 2px; background: var(--c); box-shadow: 0 0 10px var(--c); }
+.ml-key { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: rgba(244, 244, 246, .75); }
+.ml-glow { position: absolute; inset: 0; border-radius: 12px; background: var(--c); opacity: 0; }
+.ml-lane1 .ml-glow { animation: ml-hit1 4.8s linear infinite; }
+.ml-lane2 .ml-glow { animation: ml-hit2 4.8s linear infinite; }
+.ml-line {
+  position: absolute; left: 9px; top: 0; width: 56px; height: 14px; border-radius: 7px; opacity: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 65%, #fff), var(--c)); box-shadow: 0 0 14px color-mix(in srgb, var(--c) 55%, transparent);
+  animation: ml-fall 4.8s linear infinite;
+}
+.ml-line.chord { --c: var(--cc); }
+/* a line takes 35% of the loop (1.68 s) to reach the bar, then pops */
+@keyframes ml-fall {
+  0% { transform: translateY(-20px); opacity: 1; }
+  35% { transform: translateY(300px); opacity: 1; }
+  40% { transform: translateY(300px) scale(1.2, 1.7); opacity: 0; }
+  100% { transform: translateY(300px); opacity: 0; }
+}
+/* each button flashes as its lines land (same timing as the delays in tutorial.ts) */
+@keyframes ml-hit1 { 0%, 22%, 30%, 34.5%, 42%, 59.5%, 67%, 84.5%, 92%, 100% { opacity: 0; } 22.5%, 35%, 60%, 85% { opacity: .3; } }
+@keyframes ml-hit2 { 0%, 9.5%, 17%, 47%, 54.5%, 72%, 79.5%, 84.5%, 92%, 100% { opacity: 0; } 10%, 47.5%, 72.5%, 85% { opacity: .3; } }
+
+/* end screen */
+.tut-tag { color: var(--c); background: color-mix(in srgb, var(--c) 14%, #08080A); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent), 0 0 18px -4px color-mix(in srgb, var(--c) 60%, transparent); letter-spacing: .12em !important; }
+.tut-unlock { background-image: linear-gradient(90deg, rgba(43, 212, 255, .07), rgba(43, 212, 255, 0) 60%); }
+.tut-tipicon { color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 40%, transparent); }
+.tut-tiptext .tx { line-height: 1.45; }
+
+/* what's new: sections of short notes, older versions quieter below; the list fades out at its edges */
+.wn-list { -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 14px, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(180deg, transparent 0, #000 14px, #000 calc(100% - 36px), transparent); }
+.wn-entry { padding-top: 12px; }
+.wn-entry.older { padding-top: 0; padding-bottom: 28px; }
+.wn-section { margin: 0 8px 16px 0; }
+.wn-title { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #8A8A97; margin-bottom: 8px; }
+.wn-item { position: relative; padding-left: 18px; margin-bottom: 8px; font-size: 14px; font-weight: 500; line-height: 1.5; color: rgba(244, 244, 246, .9); }
+.wn-item::before { content: ''; position: absolute; left: 2px; top: .62em; width: 6px; height: 6px; border-radius: 50%; background: linear-gradient(135deg, #2BD4FF, #FF5CA8); }
+.wn-earlier { margin: 8px 8px 14px 0; padding-top: 16px; border-top: 1px solid #25252E; font-size: 10px; font-weight: 700; letter-spacing: .1em; color: #52525C; }
+.wn-entry.older .wn-item { color: #8A8A97; font-size: 13px; }
+.wn-entry.older .wn-item::before { background: #52525C; }
+.wn-entry.older .wn-title { color: #52525C; }
+.wn-old { font-size: 15px; font-weight: 700; color: #F4F4F6; margin-bottom: 2px; }
+.wn-oldhead { font-size: 13px; font-weight: 500; color: #8A8A97; margin-bottom: 14px; }
+
+/* less motion (the setting adds .still, or the system asks): nothing pulses, the welcome card's lines rest in place */
+.still .tut-pips i.holding, .tut-spot.still, .still .ml-glow { animation: none !important; }
+.still .ml-line { animation: none !important; opacity: 1; transform: translateY(var(--rest)); }
+@media (prefers-reduced-motion: reduce) {
+  .tut-card.in, .tut-spot, .tut-pips i.holding, .ml-glow { animation: none !important; }
+  .ml-line { animation: none !important; opacity: 1; transform: translateY(var(--rest)); }
+}
+
+/* ---- settings & skins ---- */
+/* settings: choice chips (hit effects, themes); locked ones show a padlock and can't be picked */
+.schip { background-color: #0E0E12; box-shadow: 0 0 0 1px #25252E; color: #8A8A97; transition: box-shadow .15s, color .15s, background-color .15s; }
+.schip:hover { color: #F4F4F6; background-color: #1D1D25; }
+.schip.on { color: #F4F4F6; background-color: #1D1D25; box-shadow: 0 0 0 1.5px #F4F4F6; }
+.schip.locked { color: #52525C; cursor: help; }
+.schip.locked:hover { color: #8A8A97; background-color: #15151B; }
+.schip.theme {
+  background-image: linear-gradient(135deg, color-mix(in srgb, var(--ta, #2BD4FF) 34%, transparent), color-mix(in srgb, var(--tb, #FF5CA8) 34%, transparent));
+  color: #F4F4F6;
+}
+.schip.theme.locked { background-image: linear-gradient(135deg, color-mix(in srgb, var(--ta, #2BD4FF) 9%, transparent), color-mix(in srgb, var(--tb, #FF5CA8) 9%, transparent)); color: #52525C; }
+.lockicon { display: inline-block; vertical-align: -1px; margin-right: 6px; }
+.s-off { opacity: .45; }
+.s-shake { animation: s-shake .3s; }
+@keyframes s-shake { 20%, 60% { translate: -3px 0; } 40%, 80% { translate: 3px 0; } }
+
+/* line skins (look.ts styleNote): Prism's rainbow slides along, Ember flickers */
+.bar[data-skin="Prism"] { animation: prism-x 2.4s linear infinite; }
+.hold[data-skin="Prism"] { animation: prism-y 2.4s linear infinite; }
+@keyframes prism-x { from { background-position: 0% 0; } to { background-position: 100% 0; } }
+@keyframes prism-y { from { background-position: 0 100%; } to { background-position: 0 0%; } }
+.bar[data-skin="Ember"] { animation: ember 1.1s ease-in-out infinite alternate; }
+@keyframes ember { to { filter: brightness(1.22) saturate(1.15); } }
+
+/* hit effects (look.ts playHitEffect) */
+.hfx { position: absolute; pointer-events: none; border-radius: 50%; transform: translate(-50%, -50%); will-change: transform, opacity; }
+.hfx-spark { border-radius: 2px; }
+.hfx-glint { border-radius: 0; }
+.hfx-star { position: absolute; inset: 0; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
+.hfx-wave { border-radius: 6px; }
+.hfx-lane { border-radius: 14px; transform: none; }
+
+/* the light behind the home logo follows the menu theme (shell.ts setAmbient) */
+.logoglow {
+  background: radial-gradient(closest-side at 38% 50%, color-mix(in srgb, var(--ga) 11%, transparent), transparent),
+    radial-gradient(closest-side at 64% 50%, color-mix(in srgb, var(--gb) 10%, transparent), transparent);
+  transition: --ga 1.2s ease, --gb 1.2s ease;
+}
+
+/* Settings → Reduce motion: the menus don't pop, slide, drift or pulse (a song's hit feedback stays) */
+.reduce-motion .f:not([data-path^="game."]) { --s: 1 !important; }
+.reduce-motion .slide, .reduce-motion .grow { transition: none !important; }
+.reduce-motion .glowa, .reduce-motion .glowb { animation: none; opacity: .6 !important; }
+.reduce-motion .pfpulse { opacity: .2 !important; }
+.reduce-motion .bar[data-skin], .reduce-motion .hold[data-skin], .reduce-motion .s-shake { animation: none; }
+
+/* ---- locker & nameplates ---- */
+/* a player's name with their tag badge and name color (nameplate.ts) */
+.np { display: inline-flex; align-items: center; gap: .4em; max-width: 100%; min-width: 0; vertical-align: -.1em; }
+.np-tag {
+  flex: none; font-size: max(8px, .6em); font-weight: 700; letter-spacing: .08em; line-height: 1; padding: .34em .5em .3em; border-radius: .5em;
+  color: var(--tc); background: color-mix(in srgb, var(--tc) 13%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tc) 45%, transparent);
+}
+.np-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-grad { -webkit-background-clip: text; background-clip: text; color: transparent !important; }
+/* a title after the name gives way first when there's no room */
+.np-extra { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8A8A97; font-weight: 500; font-size: .87em; }
+/* a nameplate with something after it that always shows (the King of the Hill's score): the name gives way */
+.t.np-row .tx { display: flex; align-items: center; min-width: 0; }
+.np-row .np { flex: 0 1 auto; }
+.np-after { flex: none; margin-left: .28em; }
+
+/* NEW counts on the PROFILE / LOCKER buttons */
+.lk-badge { box-shadow: 0 0 0 2px #08080A, 0 0 14px rgba(255, 92, 168, .6); pointer-events: none; letter-spacing: 0 !important; }
+.lk-chip { cursor: pointer; transition: background-color .15s; }
+.lk-chip:hover { background-color: rgba(255, 255, 255, .035); }
+
+/* the Locker */
+.lk-count b { font-weight: 800; color: #F4F4F6; }
+.lk-barfill { background: linear-gradient(90deg, #2BD4FF, #A78BFA, #FF5CA8); transition: width .5s cubic-bezier(.25, 1, .5, 1); }
+.lk-me { box-shadow: 0 0 0 1px #25252E; background-image: linear-gradient(90deg, rgba(43, 212, 255, .06), rgba(255, 92, 168, .03) 45%, transparent 70%); }
+.lk-slot .lk-icon { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.lk-icon .lk-pv-fx { position: absolute; left: 0; top: 0; width: 200%; height: 200%; transform: scale(.5); transform-origin: 0 0; }
+.lk-icon .lk-lane { width: 34px; }
+.lk-swatch { width: 22px; height: 22px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255, 255, 255, .15), 0 0 14px rgba(255, 255, 255, .12); }
+/* tabs with something new get a pink dot after their label */
+.lk-tab.has-new .tx::after {
+  content: ''; display: inline-block; width: 6px; height: 6px; margin: 0 0 1px 7px; border-radius: 50%; vertical-align: middle;
+  background: #FF5CA8; box-shadow: 0 0 8px #FF5CA8; animation: lk-glow 1.8s ease-in-out infinite;
+}
+/* scrolling lists fade out at the bottom edge */
+.lk-fade { -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent); }
+.lk-lines .tx { white-space: pre-line; }
+
+.lk-grid { display: grid; grid-template-columns: repeat(5, 155px); gap: 10px; padding: 1px 0 28px 1px; }
+.lk-card {
+  position: relative; height: 148px; padding: 0; margin: 0; border: 0; border-radius: 14px; overflow: hidden; cursor: pointer;
+  background: #15151B; color: #F4F4F6; font-family: inherit; text-align: left; box-shadow: 0 0 0 1px #25252E;
+  transition: background-color .15s, box-shadow .2s, transform .15s;
+}
+.lk-card:hover { background: #1A1A21; box-shadow: 0 0 0 1px #3A3A46; transform: translateY(-2px); }
+.lk-card:focus-visible { outline: 2px solid rgba(43, 212, 255, .7); outline-offset: 2px; }
+.lk-card[data-state=equipped] {
+  background: color-mix(in srgb, var(--accent) 7%, #15151B);
+  box-shadow: 0 0 0 1.5px var(--accent), 0 12px 30px -14px var(--accent);
+}
+.lk-card[data-state=locked] { background: #0E0E12; cursor: default; }
+.lk-card[data-state=locked]:hover { transform: none; box-shadow: 0 0 0 1px #25252E; }
+.lk-prev {
+  position: absolute; left: 7px; right: 7px; top: 7px; height: 54px; padding: 0 10px; border-radius: 10px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center; background: #08080A; font-size: 15px; font-weight: 700;
+}
+.lk-card[data-state=locked] .lk-prev > :not(.lk-lock) { filter: grayscale(1); opacity: .32; }
+.lk-card[data-state=locked] .lk-prev .p { animation-play-state: paused; }
+/* tight in the corner, so it stays clear of a one-line preview (your nameplate, a title) */
+.lk-lock { position: absolute; right: 4px; top: 4px; width: 16px; height: 16px; border-radius: 5px; display: none; align-items: center; justify-content: center; color: #8A8A97; background: rgba(29, 29, 37, .9); }
+.lk-card[data-state=locked] .lk-lock { display: flex; }
+.lk-name { position: absolute; left: 14px; right: 12px; top: 69px; font-size: 13px; font-weight: 700; letter-spacing: .02em; line-height: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lk-card[data-state=locked] .lk-name { color: #8A8A97; }
+.lk-desc {
+  position: absolute; left: 14px; right: 10px; top: 88px; font-size: 11px; font-weight: 500; line-height: 14px; color: #8A8A97;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.lk-state { position: absolute; left: 14px; right: 14px; bottom: 11px; height: 14px; display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; letter-spacing: .08em; color: #52525C; }
+.lk-st, .lk-hov { white-space: nowrap; }
+.lk-hov { display: none; }
+.lk-card:not([data-state=locked]):hover .lk-st { display: none; }
+.lk-card:not([data-state=locked]):hover .lk-hov { display: block; color: #F4F4F6; }
+.lk-card[data-state=equipped] .lk-st, .lk-card[data-state=equipped]:hover .lk-hov { color: var(--accent); }
+.lk-card[data-state=unlocked] .lk-st { color: #4ADE80; }
+.lk-prog { flex: 1; height: 4px; border-radius: 2px; background: #1D1D25; overflow: hidden; }
+.lk-prog i { display: block; height: 100%; border-radius: 2px; background: var(--accent); opacity: .75; }
+.lk-new {
+  margin-left: auto; display: none; padding: 3px 6px 2px; border-radius: 6px;
+  font-size: 9px; font-weight: 800; letter-spacing: .1em; line-height: 1.2; color: #08080A; background: #FF5CA8;
+  box-shadow: 0 0 14px rgba(255, 92, 168, .55); animation: lk-glow 1.8s ease-in-out infinite;
+}
+.lk-card.new .lk-new { display: block; }
+
+/* card previews */
+.lk-pv-title {
+  color: #F5C451; font-size: 13px; font-weight: 700; letter-spacing: .07em; line-height: 1.2; text-align: center;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-shadow: 0 0 18px rgba(245, 196, 81, .4);
+}
+/* 10px at the preview's 15px, and it shrinks with the name when locker.ts fitPlates steps it down */
+.lk-tag .np-tag { font-size: .67em; }
+.lk-pv-skin { display: flex; gap: 8px; height: 100%; }
+.lk-lane { position: relative; width: 50px; height: 100%; background: linear-gradient(180deg, rgba(29, 29, 37, 0), #1D1D25); }
+.lk-pv-theme { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.lk-word { font-size: 15px; font-weight: 800; letter-spacing: -.02em; color: #F4F4F6; }
+.lk-word span { -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* hit effects, looping over a button's hit line */
+.lk-pv-fx { position: relative; width: 100%; height: 100%; }
+.lk-pv-fx .pad {
+  position: absolute; left: 50%; top: 50%; width: 66px; height: 26px; transform: translate(-50%, -50%); border-radius: 8px;
+  background: color-mix(in srgb, var(--c) 9%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 35%, transparent);
+}
+.lk-pv-fx .pad::after { content: ''; position: absolute; left: 8px; right: 8px; top: 12px; height: 2px; border-radius: 1px; background: var(--c); box-shadow: 0 0 8px var(--c); }
+.lk-pv-fx .p { position: absolute; left: 50%; top: 50%; pointer-events: none; }
+.fx-ring .p { width: 34px; height: 34px; margin: -17px; border-radius: 50%; box-shadow: 0 0 0 2px var(--c), 0 0 12px var(--c); animation: lk-ring 1.4s ease-out infinite; }
+.fx-burst .p { width: 64px; height: 64px; margin: -32px; border-radius: 50%; background: radial-gradient(circle, #FFFFFF 0%, var(--c) 22%, transparent 64%); opacity: .6; animation: lk-burst 1.4s ease-out infinite; }
+.fx-sparks .p {
+  --a: calc(var(--i) * 28deg - 160deg); width: 4px; height: 4px; margin: -2px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c);
+  transform: rotate(var(--a)) translateX(16px); animation: lk-spark 1.2s ease-out infinite;
+}
+.fx-stars .p {
+  --dx: calc((var(--i) - 1) * 18px); margin: -8px -6px; font-size: 13px; line-height: 1; color: #F5C451; text-shadow: 0 0 8px rgba(245, 196, 81, .8);
+  transform: translate(var(--dx), -10px); animation: lk-star 1.5s ease-out infinite; animation-delay: calc(var(--i) * .2s);
+}
+.fx-shockwave .p { width: 124px; height: 22px; margin: -11px -62px; border-radius: 50%; box-shadow: 0 0 0 2px var(--c), 0 0 14px var(--c); animation: lk-shock 1.4s ease-out infinite; }
+@keyframes lk-ring { 0% { transform: scale(.4); opacity: 1; } 70%, 100% { transform: scale(1.5); opacity: 0; } }
+@keyframes lk-burst { 0% { transform: scale(.2); opacity: .95; } 55%, 100% { transform: scale(1.15); opacity: 0; } }
+@keyframes lk-spark { 0% { transform: rotate(var(--a)) translateX(4px); opacity: 1; } 70%, 100% { transform: rotate(var(--a)) translateX(30px); opacity: 0; } }
+@keyframes lk-star { 0% { transform: translate(var(--dx), 6px) scale(.3); opacity: 0; } 25% { opacity: 1; } 80%, 100% { transform: translate(calc(var(--dx) * 1.4), -22px) scale(1); opacity: 0; } }
+@keyframes lk-shock { 0% { transform: scale(.15, .6); opacity: 1; } 70%, 100% { transform: scale(1.1, 1.2); opacity: 0; } }
+
+/* equipping: the card pops and flashes in the tab's color; a locked one shakes */
+.lk-flash { animation: lk-pop .42s cubic-bezier(.34, 1.56, .64, 1); }
+.lk-flash::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: inset 0 0 0 2px var(--accent);
+  background: radial-gradient(circle at 50% 25%, color-mix(in srgb, var(--accent) 38%, transparent), transparent 70%); animation: lk-fade .7s ease-out forwards;
+}
+.lk-shake { animation: lk-shake .36s; }
+@keyframes lk-pop { 0% { transform: scale(.93); } 100% { transform: scale(1); } }
+@keyframes lk-fade { from { opacity: 1; } to { opacity: 0; } }
+@keyframes lk-shake { 20% { transform: translateX(-5px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+@keyframes lk-glow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.25); } }
+
+/* results: what the run unlocked */
+.lk-resbtn {
+  overflow: hidden; background: linear-gradient(100deg, rgba(255, 92, 168, .16), rgba(167, 139, 250, .08) 55%, rgba(43, 212, 255, .1)) !important;
+  box-shadow: 0 0 0 1px rgba(255, 92, 168, .5), 0 12px 40px -16px rgba(255, 92, 168, .7) !important;
+}
+.lk-resbtn::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -40%; width: 30%; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .12), transparent); transform: skewX(-20deg); animation: lk-sweep 3s ease-in-out infinite 1s;
+}
+.lk-resbtn .np-tag { display: inline-block; font-size: 10px; vertical-align: 1px; }
+.lk-arrive { animation: lk-arrive .55s cubic-bezier(.34, 1.56, .64, 1) backwards; }
+@keyframes lk-sweep { 0% { left: -40%; } 40%, 100% { left: 130%; } }
+@keyframes lk-arrive { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: none; } }
+
+.reduce-motion .lk-pv-fx .p, .reduce-motion .lk-new, .reduce-motion .lk-tab.has-new .tx::after, .reduce-motion .lk-resbtn::before,
+.reduce-motion .lk-flash, .reduce-motion .lk-flash::after, .reduce-motion .lk-shake, .reduce-motion .lk-arrive { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .lk-pv-fx .p, .lk-new, .lk-tab.has-new .tx::after, .lk-resbtn::before, .lk-flash, .lk-shake, .lk-arrive { animation: none; }
+}

@@ -5,7 +5,12 @@ export type Grade = 'SS' | 'S' | 'A' | 'B' | 'C' | 'D' | 'F';
 export type StyleName = 'Classic' | 'Hardcore' | 'SuddenDeath' | 'Playground' | 'Practice';
 export type ModKey = 'hidden' | 'sudden' | 'flashlight' | 'mirror' | 'random' | 'wave' | 'mines' | 'auto';
 export type HitSound = 'OFF' | 'TICK' | 'MANIA' | 'KICK' | 'CLAP';
-export type NoteStyle = 'Glow' | 'Flat' | 'Outline' | 'Classic';
+/** the four free line styles, then the unlockable skins (shared/cosmetics.js NOTE_SKINS) */
+export type NoteStyle = 'Glow' | 'Flat' | 'Outline' | 'Classic' | 'Neon' | 'Pixel' | 'Chrome' | 'Ghost' | 'Ember' | 'Prism';
+/** what a hit looks like (shared/cosmetics.js HIT_EFFECTS) */
+export type HitEffect = 'Ring' | 'None' | 'Burst' | 'Sparks' | 'Stars' | 'Shockwave';
+/** how hit judgments show: the word + timing, a small word, or nothing */
+export type JudgeStyle = 'Full' | 'Minimal' | 'Off';
 
 /** Onset analysis: one digit (0-9) per 16th step for kick/bass, snare/mids and hats/highs. */
 /**
@@ -73,6 +78,24 @@ export interface Settings {
   laneColors: [string, string]; chordColor: string; noteStyle: NoteStyle; noteSize: number; hitSound: HitSound;
   style: StyleName; rate: number;
   hidden: boolean; sudden: boolean; flashlight: boolean; mirror: boolean; random: boolean; wave: boolean; mines: boolean;
+  /** hit sound volume (0-1), separate from the music */
+  hitVolume: number;
+  /** music in the menus (song previews) */
+  menuMusic: boolean;
+  /** how dark the lanes are behind the lines (0 = default, up to 0.9 = almost black) */
+  laneDim: number;
+  judgeStyle: JudgeStyle;
+  /** the "+12ms" under each judgment */
+  showTiming: boolean;
+  /** the early / late timing bar on the right */
+  showMeter: boolean;
+  /** frames per second in the corner while playing */
+  showFps: boolean;
+  /** fewer pops, pulses and slides in the menus */
+  reduceMotion: boolean;
+  hitEffect: HitEffect;
+  /** menu background glow (shared/cosmetics.js THEMES id) */
+  theme: string;
 }
 
 export interface Best { score: number; accuracy: number; combo: number; grade: Grade; fc: boolean }
@@ -84,6 +107,16 @@ export interface Profile {
   streak: number; bestStreak: number; lastDay: number; title: string;
   achievements: Record<string, true>; packs: Record<string, true>;
   weekly: Record<string, number>;
+  /** worn tag and name color (shared/cosmetics.js ids; '' = none / default) */
+  tag: string; nameColor: string;
+  /** 1v1s won / played, imports added, weeks as King of the Hill, times #1 on a chart */
+  vsWins: number; vsPlays: number; imports: number; kings: number; tops: number;
+  tutorialDone: boolean;
+  /** the day (days since 1970) of the first run, 0 = not played yet */
+  since: number;
+  /** unlocks already looked at in the Locker ("tag:veteran"), so new ones can say NEW */
+  seen: Record<string, true>;
 }
 
-export interface SaveData { settings: Settings; bests: Bests; recent: RecentEntry[]; profile: Profile }
+/** v: the save format, so later versions can migrate older saves */
+export interface SaveData { v: number; settings: Settings; bests: Bests; recent: RecentEntry[]; profile: Profile }

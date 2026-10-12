@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('lineRushDesktop', {
   openFolder: which => ipcRenderer.invoke('desktop:open-folder', which),
   listSongs: () => ipcRenderer.invoke('desktop:list-songs'),
   readSong: name => ipcRenderer.invoke('desktop:read-song', name),
+  checkUpdates: () => ipcRenderer.invoke('desktop:check-updates'),
   installUpdate: () => ipcRenderer.invoke('desktop:install-update'),
   readyToClose: () => ipcRenderer.invoke('desktop:ready-to-close'),
   activity: a => ipcRenderer.send('desktop:activity', a),

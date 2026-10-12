@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkPassword, checkUsername, createAuth, parseCookies } from '../api/_lib/core.js';
+import { Readable } from 'node:stream';
+import { checkPassword, checkUsername, clientIp, createAuth, fromNode, parseCookies } from '../api/_lib/core.js';
 import { memoryStore } from '../api/_lib/store.js';
 
 // Test-only account (in-memory store, never leaves this process).
@@ -80,6 +81,66 @@ test('sign up, stay logged in, save, log out, log back in', async () => {
   assert.equal(r.status, 200);
   assert.equal(r.body.user.username, USER);
   assert.deepEqual((await c.call('GET', 'save')).body.data, { profile: { xp: 77 } });
+});
+
+test("a save from an older game (the 1.0 app after playing 1.1) keeps what that game doesn't know", async () => {
+  const store = memoryStore();
+  const calls: string[] = [];
+  const spy = new Proxy(store, {
+    get(target, k) {
+      const v = (target as Record<string | symbol, unknown>)[k];
+      return typeof v === 'function' ? (...a: unknown[]) => { calls.push(String(k)); return v.apply(target, a); } : v;
+    },
+  });
+  const c = client(createAuth(spy, { scrypt: { N: 1024, r: 8, p: 1 } }));
+  await c.call('POST', 'auth/register', { username: USER, password: PASS });
+  const get = async () => (await c.call('GET', 'save')).body.data;
+
+  // 1.1: save format 3, with fields 1.0 never had (and a top-level key of its own)
+  const v11 = {
+    v: 3,
+    settings: { musicVolume: 0.5, noteStyle: 'Glow', hitEffect: 'Sparks', theme: 'royal', laneDim: 0.4, menuMusic: false },
+    profile: {
+      xp: 5000, plays: 40, title: 'Rookie', achievements: { first_clear: true, acc_99: true },
+      tag: 'king', nameColor: 'royal', vsWins: 12, vsPlays: 20, kings: 1, tops: 5, tutorialDone: true, since: 20700, seen: { 'tag:king': true },
+    },
+    bests: { current: { score: 9000 } },
+    recent: [{ id: 'current' }],
+    extra: { from: 'a newer game' },
+  };
+  assert.equal((await c.call('PUT', 'save', { data: v11 })).status, 200);
+
+  // 1.0: no v, none of the new fields, and a song played since
+  const v10 = {
+    settings: { musicVolume: 0.9, noteStyle: 'Flat' },
+    profile: { xp: 5200, plays: 41, title: 'Hard Hitter', achievements: { first_clear: true, acc_99: true, clear_hard: true } },
+    bests: { current: { score: 9500 } },
+    recent: [{ id: 'afterglow' }, { id: 'current' }],
+  };
+  calls.length = 0;
+  assert.equal((await c.call('PUT', 'save', { data: v10 })).status, 200);
+  assert.deepEqual(calls, ['get', 'get', 'incr', 'get', 'set'], 'one read of the stored save, one write');
+  assert.deepEqual(await get(), {
+    v: 3,
+    settings: { ...v11.settings, musicVolume: 0.9, noteStyle: 'Flat' },
+    profile: { ...v11.profile, xp: 5200, plays: 41, title: 'Hard Hitter', achievements: { first_clear: true, acc_99: true, clear_hard: true } },
+    bests: v10.bests, recent: v10.recent, extra: v11.extra,
+  });
+
+  // the same format or a newer one: the last save wins, as before
+  for (const data of [{ v: 3, profile: { xp: 6000 } }, { v: 4, profile: { xp: 7000 }, settings: { future: 1 } }]) {
+    assert.equal((await c.call('PUT', 'save', { data })).status, 200);
+    assert.deepEqual(await get(), data);
+  }
+  // and 1.1 next to a newer game keeps that game's fields the same way
+  await c.call('PUT', 'save', { data: { v: 3, profile: { xp: 7100 }, settings: { musicVolume: 1 } } });
+  assert.deepEqual(await get(), { v: 4, profile: { xp: 7100 }, settings: { future: 1, musicVolume: 1 } });
+
+  // the size limit counts the merged save; a refused save changes nothing
+  const big = { v: 4, extra: 'x'.repeat(60 * 1024) };
+  assert.equal((await c.call('PUT', 'save', { data: big })).status, 200);
+  assert.equal((await c.call('PUT', 'save', { data: { profile: { notes: 'y'.repeat(50 * 1024) } } })).status, 413);
+  assert.deepEqual(await get(), big);
 });
 
 test('usernames are unique regardless of case', async () => {
@@ -171,4 +232,35 @@ test('changing the password logs out other devices; delete removes everything', 
   // the name is free again
   assert.equal((await client(h, '10.0.0.8').call('POST', 'auth/register', { username: USER, password: PASS })).status, 201);
   assert.equal((await client(h, '10.0.0.8').call('GET', 'save')).status, 401);
+});
+
+test('client IP: the address the proxy saw, never one the client made up', async () => {
+  const xff = (v?: string) => (v ? { 'x-forwarded-for': v } : {});
+  assert.equal(clientIp(xff('203.0.113.9'), '10.0.0.1', 1), '203.0.113.9');
+  assert.equal(clientIp(xff('1.2.3.4, 203.0.113.9'), '10.0.0.1', 1), '203.0.113.9', 'a made-up first entry is ignored');
+  assert.equal(clientIp(xff('1.2.3.4, 203.0.113.9, 198.51.100.7'), '10.0.0.1', 2), '203.0.113.9', 'two proxies');
+  assert.equal(clientIp(xff(), '10.0.0.1', 1), '10.0.0.1');
+  assert.equal(clientIp(xff('1.2.3.4'), '10.0.0.1', 0), '10.0.0.1', 'not behind a proxy: the header is ignored');
+
+  // sign-ups from one address, each with a different made-up X-Forwarded-For / X-Real-IP: still one IP
+  const handle = fresh();
+  const statuses: number[] = [];
+  for (let i = 0; i < 6; i++) {
+    const body = JSON.stringify({ username: `spoof_${i}`, password: PASS });
+    const req = Object.assign(Readable.from([Buffer.from(body)]), {
+      method: 'POST', url: '/api/auth/register', socket: { remoteAddress: '10.0.0.1' },
+      headers: {
+        host: 'linerush.test', 'x-linerush': '1', 'content-type': 'application/json',
+        'x-forwarded-for': `198.51.100.${i}, 203.0.113.9`, 'x-real-ip': `198.51.100.${i}`,
+      },
+    });
+    const parsed = await fromNode(req, 'auth/register', { trustProxy: true, proxyHops: 1 });
+    assert.equal(parsed.ip, '203.0.113.9');
+    statuses.push((await handle(parsed)).status);
+  }
+  assert.deepEqual(statuses, [201, 201, 201, 201, 201, 429]);
+
+  // without a proxy, forwarding headers are the client's own words
+  const direct = { method: 'GET', url: '/api/auth/me', socket: { remoteAddress: '10.0.0.1' }, headers: { host: 'localhost', 'x-real-ip': '6.6.6.6', 'x-forwarded-for': '6.6.6.6' } };
+  assert.equal((await fromNode(direct, 'auth/me', { trustProxy: false })).ip, '10.0.0.1');
 });

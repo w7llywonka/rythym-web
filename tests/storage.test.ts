@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_KEYS, DEFAULT_SETTINGS, K } from '../src/config.ts';
 import {
-  dropImportProgress, IMPORT_PROGRESS_KEY, load, sanitize, save, saveImportProgress, STORAGE_KEY, withImportProgress, withoutImports,
+  dropImportProgress, fromOlderSave, IMPORT_PROGRESS_KEY, load, sanitize, save, saveImportProgress, STORAGE_KEY, withImportProgress, withoutImports,
 } from '../src/storage.ts';
 import type { Best, Diff } from '../src/types.ts';
 
@@ -171,4 +171,34 @@ test('dropImportProgress forgets one import: both charts\' bests and its Recent 
   // the original isn't changed
   assert.equal(d.bests['custom-a+']?.score, 2);
   assert.equal(d.recent.length, 3);
+});
+
+test('a save from before 1.1 (no `since`) is playing since the day it last played', () => {
+  const old = sanitize({ profile: { plays: 340, lastDay: 20730, bestStreak: 9 } });
+  assert.equal(old.profile.since, 20730);
+  // never played, or no day to go on: nothing to backfill
+  assert.equal(sanitize({ profile: { plays: 0, lastDay: 20730 } }).profile.since, 0);
+  assert.equal(sanitize({ profile: { plays: 5, lastDay: 0 } }).profile.since, 0);
+  // a 1.1 save keeps its own (0 = hasn't finished a song on 1.1 yet)
+  assert.equal(sanitize({ v: 3, profile: { plays: 340, lastDay: 20730, since: 20500 } }).profile.since, 20500);
+  assert.equal(sanitize({ v: 3, profile: { plays: 340, lastDay: 20730, since: 0 } }).profile.since, 0);
+  // and it sticks: saved and loaded again, it's the same day
+  const store = memory();
+  save(old, store);
+  assert.equal(load(store).profile.since, 20730);
+});
+
+test('fromOlderSave: only saves from before 1.1 (no `v`), through the import merge too', () => {
+  const store = memory();
+  assert.equal(fromOlderSave(sanitize({ profile: { plays: 3 } })), true);
+  assert.equal(fromOlderSave(sanitize({ v: 3, profile: { plays: 3 } })), false);
+  assert.equal(fromOlderSave(sanitize(null)), false, 'no save at all: a new player, nothing to catch up on');
+  assert.equal(fromOlderSave(withImportProgress(sanitize({ profile: {} }), store)), true);
+  const withImports = memory();
+  saveImportProgress(sanitize(null), withImports);
+  assert.equal(fromOlderSave(withImportProgress(sanitize({ profile: {} }), withImports)), true);
+  assert.equal(fromOlderSave(withImportProgress(sanitize({ v: 3 }), withImports)), false);
+  // once it's been saved (with `v`), loading it again is a 1.1 save
+  save(sanitize({ profile: { plays: 3 } }), store);
+  assert.equal(fromOlderSave(load(store)), false);
 });

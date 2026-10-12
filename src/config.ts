@@ -1,4 +1,4 @@
-import type { Diff, HitSound, ModKey, Settings, StyleName, Tier } from './types.ts';
+import type { Diff, HitSound, JudgeStyle, ModKey, PlaySet, Settings, StyleName, Tier } from './types.ts';
 
 // neutral near-black surfaces + hairlines; color is kept for meaning (lanes, tiers, grades)
 export const T = {
@@ -92,6 +92,7 @@ export const MISS = { name: 'MISS', color: T.red };
 export const MINE_HIT = { name: 'MINE!', color: T.red };
 
 export const HIT_SOUNDS: HitSound[] = ['OFF', 'TICK', 'MANIA', 'KICK', 'CLAP'];
+export const JUDGE_STYLES: JudgeStyle[] = ['Full', 'Minimal', 'Off'];
 
 export interface Pack { id: string; name: string; songs: string[] }
 export const PACKS: Pack[] = [
@@ -102,6 +103,8 @@ export const PACKS: Pack[] = [
 
 export interface AchievementContext {
   cleared: boolean; grade: string; fc: boolean; rank: number; style: StyleName; rate: number; maxCombo: number; packComplete: boolean;
+  /** accuracy (0-100), the modifiers, whether it was the weekly challenge / an imported song */
+  accuracy: number; set: PlaySet; weekly: boolean; custom: boolean;
 }
 export interface Achievement { id: string; name: string; desc: string; title: string; check: (c: AchievementContext) => boolean }
 export const ACHIEVEMENTS: Achievement[] = [
@@ -117,6 +120,16 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'combo_500', name: 'Unbreakable', desc: 'Reach a 500 combo', title: 'Unbreakable', check: c => c.maxCombo >= 500 },
   { id: 'nightcore', name: 'Nightcore', desc: 'Clear at 1.5x speed', title: 'Nightcore', check: c => c.cleared && c.rate >= 1.5 },
   { id: 'collector', name: 'Collector', desc: 'Complete a song pack', title: 'Collector', check: c => c.packComplete },
+  { id: 'hardcore_clear', name: 'Iron Will', desc: 'Clear on Hardcore', title: 'Iron Will', check: c => c.cleared && c.style === 'Hardcore' },
+  { id: 'hidden_clear', name: 'Ghost', desc: 'Clear with Hidden on', title: 'Ghost', check: c => c.cleared && c.set.hidden },
+  { id: 'flashlight_clear', name: 'In the Dark', desc: 'Clear with Flashlight on', title: 'Night Vision', check: c => c.cleared && c.set.flashlight },
+  { id: 'mines_clear', name: 'Minesweeper', desc: 'Clear with Mines on', title: 'Minesweeper', check: c => c.cleared && c.set.mines },
+  { id: 'acc_99', name: 'Sharpshooter', desc: 'Clear with 99% accuracy', title: 'Sharpshooter', check: c => c.cleared && c.accuracy >= 99 },
+  { id: 'speed_expert', name: 'Speed Demon', desc: 'Clear Expert or harder at 1.25x', title: 'Speed Demon', check: c => c.cleared && c.rank >= 3 && c.rate >= 1.25 },
+  { id: 'combo_1000', name: 'Endless', desc: 'Reach a 1000 combo', title: 'Endless', check: c => c.maxCombo >= 1000 },
+  { id: 'weekly_clear', name: 'Challenger', desc: 'Clear the weekly challenge', title: 'Challenger', check: c => c.cleared && c.weekly },
+  { id: 'import_clear', name: 'Selector', desc: 'Clear a song you imported', title: 'Selector', check: c => c.cleared && c.custom },
+  { id: 'insane_fc', name: 'Godlike', desc: 'Full combo an Insane chart', title: 'Godlike', check: c => c.fc && c.rank >= 5 },
 ];
 
 export const DEFAULT_KEYS: [string, string, string] = ['KeyF', 'KeyJ', 'KeyR'];
@@ -126,6 +139,8 @@ export const DEFAULT_SETTINGS: Settings = {
   laneColors: [T.cyan, T.pink], chordColor: T.gold, noteStyle: 'Glow', noteSize: 22,
   style: 'Classic', rate: 1,
   hidden: false, sudden: false, flashlight: false, mirror: false, random: false, wave: false, mines: false,
+  hitVolume: 0.8, menuMusic: true, laneDim: 0, judgeStyle: 'Full', showTiming: true, showMeter: true, showFps: false,
+  reduceMotion: false, hitEffect: 'Ring', theme: 'default',
 };
 // keys that can't be bound (browser/menu keys)
 export const BLOCKED_KEYS = new Set(['Escape', 'Slash', 'Tab', 'F5', 'F11', 'F12', 'MetaLeft', 'MetaRight']);

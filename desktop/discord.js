@@ -14,10 +14,17 @@ export function encode(op, payload) {
   return Buffer.concat([header, data]);
 }
 
-/** splits a byte stream into messages; returns the leftover bytes */
+// Discord's messages are a few KB; a length outside this isn't Discord talking
+export const MAX_FRAME = 64 * 1024;
+
+/**
+ * splits a byte stream into messages; returns the leftover bytes, or null if the stream can't be
+ * Discord's (a negative length would loop forever, a huge one would buffer without end)
+ */
 export function decode(buffer, onMessage) {
   while (buffer.length >= 8) {
     const op = buffer.readInt32LE(0), len = buffer.readInt32LE(4);
+    if (len < 0 || len > MAX_FRAME) return null;
     if (buffer.length < 8 + len) break;
     let data = null;
     try { data = JSON.parse(buffer.subarray(8, 8 + len).toString('utf8')); } catch { /* ignore a bad frame */ }
@@ -93,11 +100,13 @@ export function createPresence({ clientId, connect = path => net.createConnectio
       s.write(encode(OP.HANDSHAKE, { v: 1, client_id: clientId }));
     });
     s.on('data', chunk => {
-      pending = decode(Buffer.concat([pending, chunk]), (op, msg) => {
+      const rest = decode(Buffer.concat([pending, chunk]), (op, msg) => {
         if (op === OP.PING) s.write(encode(OP.PONG, msg ?? {}));
         else if (op === OP.CLOSE) s.destroy();
         else if (op === OP.FRAME && msg?.evt === 'READY') { ready = true; flush(); }
       });
+      if (rest === null) s.destroy(); // not Discord: hang up, try again later
+      else pending = rest;
     });
     s.on('error', () => {});
     s.on('close', () => {
