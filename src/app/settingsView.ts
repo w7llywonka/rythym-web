@@ -55,6 +55,13 @@ export const fpsColor = (fps: number) => (fps >= 50 ? T.muted : fps >= 30 ? T.go
 export const choiceHint = (item: { label: string; desc: string; unlock: UnlockRule }, unlocked: boolean) =>
   unlocked ? item.desc : `${item.label}  ·  ${describeRule(item.unlock)}`;
 
+/** the line style you leave Customize with: the skin on screen if it's unlocked, else the one you had */
+export const keptSkin = <V>(shown: V, unlocked: boolean, had: V): V => (unlocked ? shown : had);
+
+/** the line under Customize's line style: how many skins you have, or, on a locked one, which one you're using */
+export const skinHint = (unlocked: boolean, inUse: string, count: number, total: number) =>
+  unlocked ? `${count} of ${total} skins unlocked` : `Locked  ·  In use: ${inUse}`;
+
 /** a small padlock for locked choices (fixed markup, safe for innerHTML) */
 export const LOCK_ICON = '<svg class="lockicon" width="9" height="11" viewBox="0 0 9 11" aria-hidden="true">'
   + '<path d="M2 5V3.4a2.5 2.5 0 0 1 5 0V5" fill="none" stroke="currentColor" stroke-width="1.5"/>'
