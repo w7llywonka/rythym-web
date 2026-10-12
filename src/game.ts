@@ -9,7 +9,11 @@ import type { Diff, Lane, PlaySet, Settings, Track } from './types.ts';
 import { $, rgba, show, txt } from './ui.ts';
 
 /** versus: a 1v1 run. leadIn() = seconds until the shared server start moment. */
-export interface RunOpts { set?: PlaySet; weekly?: number; practice?: { from: number; to: number | null }; versus?: { matchId: string; opponent: string; leadIn: () => number } }
+export interface RunOpts {
+  set?: PlaySet; weekly?: number; practice?: { from: number; to: number | null }; versus?: { matchId: string; opponent: string; leadIn: () => number };
+  /** the first-time tutorial (src/app/tutorial.ts): not saved anywhere, ends on its own screen */
+  tutorial?: boolean;
+}
 
 interface RunNote {
   time: number; lane: Lane; chord: boolean; endTime?: number; mine?: boolean;

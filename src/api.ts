@@ -4,9 +4,15 @@
 
 export interface User { username: string; createdAt: number }
 
-export interface BoardEntry { rank: number; name: string; title: string; score: number }
+/**
+ * What a player wears online: their title, tag and name color. Tag and color are ids from
+ * shared/cosmetics.js ('' or missing = none / white); the server only accepts ids from those lists.
+ */
+export interface Look { title?: string; tag?: string; color?: string }
+
+export interface BoardEntry { rank: number; name: string; title: string; score: number; tag?: string; color?: string }
 export interface Board { entries: BoardEntry[]; mine: { score: number; rank: number } | null; week?: number; ends?: number }
-export interface FeedItem { kind: 'top' | 'ss' | 'fc' | 'clear' | 'king'; user: string; song: string; diff: string; at: number }
+export interface FeedItem { kind: 'top' | 'ss' | 'fc' | 'clear' | 'king'; user: string; song: string; diff: string; at: number; tag?: string; color?: string }
 export interface SubmitResult {
   chart: { improved: boolean; tookTop: boolean; rank: number | null; best: number };
   weekly: { improved: boolean; tookTop: boolean; rank: number | null; best: number } | null;
@@ -16,12 +22,14 @@ export interface VsResult { outcome: 'win' | 'lose' | 'draw'; reason: 'done' | '
 export interface VsMatch {
   id: string; songId: string; diff: string; startAt: number; endBy: number; opponent: string;
   opp: { score: number; combo: number; health: number; accuracy: number } | null; oppDone: number | null; result: VsResult | null;
+  /** the opponent's tag / name color */
+  opponentLook?: Look;
 }
 export type VsEvent = { type: 'declined'; by: string } | { type: 'react'; i: number } | { type: 'opponentDone'; score: number } | { type: 'forfeit' } | { type: 'start'; matchId: string };
 export interface VsPoll {
   now: number; match: VsMatch | null; events: VsEvent[];
   incoming: { from: string; songId: string; diff: string; expiresIn: number } | null;
-  online?: { name: string; busy: boolean }[];
+  online?: { name: string; busy: boolean; tag?: string; color?: string }[];
 }
 export interface ApiResult<T> { ok: boolean; status: number; data?: T; error?: string }
 
@@ -54,8 +62,10 @@ export const api = {
   loadSave: () => call<{ data: unknown; updatedAt: number | null }>('GET', 'save'),
   putSave: (data: unknown) => call<{ ok: true; updatedAt: number }>('PUT', 'save', { data }),
   // leaderboards, King of the Hill, live feed
-  submitScore: (run: { songId: string; diff: string; score: number; grade: string; fc: boolean; title: string; weekly?: number; style: string; rate: number }) =>
+  submitScore: (run: { songId: string; diff: string; score: number; grade: string; fc: boolean; title: string; tag?: string; color?: string; weekly?: number; style: string; rate: number }) =>
     call<SubmitResult>('POST', 'scores/submit', run),
+  /** what you wear on the boards, the feed and in 1v1 */
+  setLook: (look: Look) => call<{ ok: true; look: Look }>('POST', 'profile/look', look),
   board: (songId: string, diff: string) => call<Board>('GET', `scores/board?${new URLSearchParams({ songId, diff })}`),
   weeklyBoard: () => call<Board>('GET', 'scores/board?weekly=1'),
   feed: () => call<{ items: FeedItem[] }>('GET', 'scores/feed'),

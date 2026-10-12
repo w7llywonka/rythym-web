@@ -16,6 +16,8 @@ interface DesktopInfo {
   discord: boolean; discordAvailable: boolean; server: string; songsDir: string;
   updates: boolean;
   update: { state: 'none' | 'available' | 'downloading' | 'ready'; version: string; percent: number };
+  /** the computer's account name (for greeting the player), '' if unknown */
+  userName: string;
 }
 interface SongFile { name: string; size: number; mtime: number }
 type DesktopEvent =

@@ -123,7 +123,10 @@ async function showResults(r: Run, cleared: boolean) {
     }
   }
   if (ranked) {
-    const ctx = { cleared, grade, fc, rank: RANK[r.chartDiff], style: r.set.style, rate: r.set.rate, maxCombo: r.maxCombo, packComplete: packDone };
+    const ctx = {
+      cleared, grade, fc, rank: RANK[r.chartDiff], style: r.set.style, rate: r.set.rate, maxCombo: r.maxCombo, packComplete: packDone,
+      accuracy: acc, set: r.set, weekly: r.weekly !== undefined, custom: !!t.custom,
+    };
     for (const a of ACHIEVEMENTS) {
       if (!p.achievements[a.id] && a.check(ctx)) {
         p.achievements[a.id] = true;

@@ -9,6 +9,7 @@
 import { app, BrowserWindow, ipcMain, Menu, powerSaveBlocker, protocol, safeStorage, screen, session, shell } from 'electron';
 import { mkdirSync, readFileSync, renameSync, watch, writeFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
+import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import updater from 'electron-updater';
@@ -208,8 +209,13 @@ const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) => {
   return fn(...args);
 });
 
+// the computer's account name, so the game can greet the player by name (it never leaves the app)
+let userName = '';
+try { userName = userInfo().username.slice(0, 40); } catch { /* no user name on this system */ }
+
 function info() {
   return {
+    userName,
     version: app.getVersion(),
     platform: process.platform,
     fullscreen: win?.isFullScreen() ?? prefs.fullscreen,

@@ -1,11 +1,15 @@
 // How the falling lines look. Shared by the game and the Customize preview so both match.
+import { HIT_EFFECTS, NOTE_SKINS, THEMES } from '../shared/cosmetics.js';
 import { SWATCHES } from './config.ts';
-import type { NoteStyle } from './types.ts';
+import type { HitEffect, NoteStyle } from './types.ts';
 import { rgba } from './ui.ts';
 
 export { SWATCHES };
 
-export const NOTE_STYLES: NoteStyle[] = ['Glow', 'Flat', 'Outline', 'Classic'];
+/** every line style: the free four, then the ones you unlock (see the Locker) */
+export const NOTE_STYLES = NOTE_SKINS.map(s => s.id) as NoteStyle[];
+export const HIT_EFFECT_IDS = HIT_EFFECTS.map(e => e.id) as HitEffect[];
+export const THEME_IDS = THEMES.map(t => t.id);
 export const NOTE_SIZE = { min: 12, max: 32, step: 2 };
 
 export function lighten(hex: string, k: number) {
@@ -25,6 +29,7 @@ export function styleNote(el: HTMLElement, bar: HTMLElement, color: string, styl
   bar.style.height = `${size}px`;
   bar.style.borderRadius = `${size / 2}px`;
   switch (style) {
+    default: // styles without their own look yet draw like Glow
     case 'Glow':
       bar.style.background = `linear-gradient(180deg, ${lighten(color, 0.35)}, ${color})`;
       bar.style.boxShadow = `inset 0 1px 0 rgba(255,255,255,.45)${effects ? `, 0 0 16px ${rgba(color, 0.55)}` : ''}`;

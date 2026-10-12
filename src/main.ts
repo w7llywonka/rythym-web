@@ -9,6 +9,7 @@ import { initCustomize } from './app/customize.ts';
 import { initDesktop } from './app/desktop.ts';
 import { initHome } from './app/home.ts';
 import { initKeyboard } from './app/keyboard.ts';
+import { buildLockerUI, initLocker } from './app/locker.ts';
 import { startLoop } from './app/loop.ts';
 import { initPlay } from './app/play.ts';
 import { initPreview, showNowPlaying } from './app/preview.ts';
@@ -20,10 +21,16 @@ import { initSettings, refreshSettings } from './app/settingsPanel.ts';
 import { showScreen } from './app/shell.ts';
 import { S } from './app/state.ts';
 import { initStylePanel } from './app/stylePanel.ts';
+import { buildTutorialUI, initTutorial, startOnboarding } from './app/tutorial.ts';
 import { initVersus } from './app/versus.ts';
+import { buildWhatsNewUI, initWhatsNew } from './app/whatsnew.ts';
 import { $, buildUI, fitStage } from './ui.ts';
 
 buildUI(document.getElementById('app')!);
+// panels that live in their own modules
+buildTutorialUI();
+buildWhatsNewUI();
+buildLockerUI();
 fitStage();
 window.addEventListener('resize', fitStage);
 
@@ -44,6 +51,9 @@ initCredits();
 initKeyboard();
 initPreview();
 initDesktop();
+initTutorial();
+initWhatsNew();
+initLocker();
 
 showScreen('home');
 setTab('Easy', true);
@@ -59,4 +69,5 @@ requestAnimationFrame(() => {
   fader.style.opacity = '0';
 });
 startLoop();
-void restoreSession();
+// first-time players get the tutorial, returning ones what's new (once the account's save is in)
+void restoreSession().finally(startOnboarding);

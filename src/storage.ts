@@ -1,15 +1,22 @@
 // Saves Line Rush settings, bests, recent songs and profile in this browser (localStorage).
 // Everything loaded is sanitized the same way the Roblox server does before trusting it.
-import { DEFAULT_SETTINGS, HIT_SOUNDS, K, MODES, RATES, STYLES } from './config.ts';
-import { NOTE_SIZE, NOTE_STYLES } from './look.ts';
+import { cleanNameColor, cleanTag } from '../shared/cosmetics.js';
+import { DEFAULT_SETTINGS, HIT_SOUNDS, JUDGE_STYLES, K, MODES, RATES, STYLES } from './config.ts';
+import { HIT_EFFECT_IDS, NOTE_SIZE, NOTE_STYLES, THEME_IDS } from './look.ts';
 import type { Bests, Diff, Profile, RecentEntry, SaveData, Settings } from './types.ts';
 
 export const STORAGE_KEY = 'lineRush.save.v2';
+/**
+ * The save format. Saves from before it was written have no `v` and read the same way; when a later
+ * version changes what a field means, convert older saves in migrate() below.
+ */
+export const SAVE_VERSION = 3;
 
 export function defaultProfile(): Profile {
   return {
     xp: 0, plays: 0, notesHit: 0, fcs: 0, ss: 0, playSeconds: 0,
     streak: 0, bestStreak: 0, lastDay: 0, title: '', achievements: {}, packs: {}, weekly: {},
+    tag: '', nameColor: '', vsWins: 0, vsPlays: 0, imports: 0, kings: 0, tops: 0, tutorialDone: false, since: 0, seen: {},
   };
 }
 
@@ -42,6 +49,13 @@ export function sanitizeSettings(raw: unknown): Settings {
   out.style = typeof s.style === 'string' && s.style in STYLES ? (s.style as Settings['style']) : 'Classic';
   out.rate = RATES.includes(s.rate as number) ? (s.rate as number) : 1;
   for (const mod of ['hidden', 'sudden', 'flashlight', 'mirror', 'random', 'wave', 'mines'] as const) out[mod] = s[mod] === true;
+  out.hitVolume = Math.round(num(s.hitVolume, 0, 1, DEFAULT_SETTINGS.hitVolume) * 10) / 10;
+  out.laneDim = Math.round(num(s.laneDim, 0, 0.9, DEFAULT_SETTINGS.laneDim) * 10) / 10;
+  for (const key of ['menuMusic', 'showTiming', 'showMeter'] as const) out[key] = s[key] !== false;
+  for (const key of ['showFps', 'reduceMotion'] as const) out[key] = s[key] === true;
+  out.judgeStyle = JUDGE_STYLES.includes(s.judgeStyle as never) ? (s.judgeStyle as Settings['judgeStyle']) : DEFAULT_SETTINGS.judgeStyle;
+  out.hitEffect = HIT_EFFECT_IDS.includes(s.hitEffect as never) ? (s.hitEffect as Settings['hitEffect']) : DEFAULT_SETTINGS.hitEffect;
+  out.theme = typeof s.theme === 'string' && THEME_IDS.includes(s.theme) ? s.theme : DEFAULT_SETTINGS.theme;
   return out;
 }
 
@@ -96,12 +110,29 @@ function sanitizeProfile(raw: unknown): Profile {
       if (/^\d{1,6}$/.test(week)) out.weekly[week] = Math.floor(num(score, 0, 1e9, 0));
     }
   }
+  out.tag = cleanTag(p.tag);
+  out.nameColor = cleanNameColor(p.nameColor);
+  for (const key of ['vsWins', 'vsPlays', 'imports', 'kings', 'tops'] as const) out[key] = Math.floor(num(p[key], 0, 1e7, 0));
+  out.tutorialDone = p.tutorialDone === true;
+  out.since = Math.floor(num(p.since, 0, 1e6, 0));
+  if (isObj(p.seen)) {
+    let count = 0;
+    for (const [key, v] of Object.entries(p.seen)) {
+      if (v === true && /^[a-z]{1,12}:[A-Za-z0-9_]{1,32}$/.test(key) && ++count <= 400) out.seen[key] = true;
+    }
+  }
   return out;
 }
 
+/** older save formats -> this one (nothing to convert yet: every field so far was added, not changed) */
+function migrate(d: Record<string, unknown>): Record<string, unknown> {
+  return d;
+}
+
 export function sanitize(raw: unknown): SaveData {
-  const d = isObj(raw) ? raw : {};
+  const d = migrate(isObj(raw) ? raw : {});
   return {
+    v: SAVE_VERSION,
     settings: sanitizeSettings(d.settings),
     bests: sanitizeBests(d.bests),
     recent: sanitizeRecent(d.recent),

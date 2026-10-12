@@ -83,8 +83,10 @@ export function html(el: HTMLElement, markup: string) {
 }
 export const show = (el: HTMLElement, on: boolean) => { el.hidden = !on; };
 
-const label = (p: HTMLElement, name: string, o: Opts) => node(p, name, o);
-const frame = (p: HTMLElement, name: string, o: Opts) => node(p, name, o);
+// label / frame / button / toggle / stepper / panel are exported so a feature can build its own panel
+// in its own module (after buildUI): panel($('overlay'), 'locker', 720, 600)
+export const label = (p: HTMLElement, name: string, o: Opts) => node(p, name, o);
+export const frame = (p: HTMLElement, name: string, o: Opts) => node(p, name, o);
 export function button(p: HTMLElement, name: string, o: Opts, style: 'primary' | 'secondary' = 'secondary') {
   // one restrained button scale: big calls to action 17px, everything else 15px or smaller
   const size = (o.size ?? 15) >= 24 ? 17 : Math.min(o.size ?? 15, 15);
@@ -98,20 +100,20 @@ export function button(p: HTMLElement, name: string, o: Opts, style: 'primary' |
   return b;
 }
 
-function toggle(p: HTMLElement, w = 52, h = 28) {
+export function toggle(p: HTMLElement, w = 52, h = 28) {
   const t = node(p, 'toggle', { tag: 'button', ax: 1, ay: 0.5, x: [1, -14], y: [0.5, 0], w: w - 8, h: h - 4, bg: T.bg3, r: 'full', cls: 'toggle' });
   h -= 4;
   frame(t, 'knob', { ay: 0.5, x: 3, y: [0.5, 0], w: h - 6, h: h - 6, bg: '#FFFFFF', r: 'full', cls: 'knob' });
   return t;
 }
 
-function stepper(row: HTMLElement, prefix: string, rightOffset: number, valueWidth: number, size = 40, valueSize = 15) {
+export function stepper(row: HTMLElement, prefix: string, rightOffset: number, valueWidth: number, size = 40, valueSize = 15) {
   button(row, prefix + 'minus', { text: '−', size: 16, ax: 1, ay: 0.5, x: [1, -(rightOffset + valueWidth + 8 + size)], y: [0.5, 0], w: size, h: size, r: 10, bg: T.bg1 });
   label(row, prefix + 'value', { text: '-', font: 'black', size: valueSize, align: 'center', ax: 1, ay: 0.5, x: [1, -(rightOffset + size + 4)], y: [0.5, 0], w: valueWidth, h: 40 });
   button(row, prefix + 'plus', { text: '+', size: 16, ax: 1, ay: 0.5, x: [1, -rightOffset], y: [0.5, 0], w: size, h: size, r: 10, bg: T.bg1 });
 }
 
-function panel(parent: HTMLElement, name: string, w: number, h: number) {
+export function panel(parent: HTMLElement, name: string, w: number, h: number) {
   const p = frame(parent, name, { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.5, 0], w, h, bg: T.bg1, r: 20, stroke: T.line, hidden: true, cls: 'panel pop' });
   button(p, 'close', { text: '✕', size: 14, ax: 1, x: w - 24, y: 24, w: 36, h: 36, r: 10, color: T.muted, cls: 'iconbtn' });
   return p;
@@ -537,7 +539,8 @@ export function buildUI(app: HTMLElement) {
   buildAccountPanels(overlay, app);
   buildAppPanel(overlay);
 
-  label(overlay, 'toast', { text: '', size: 15, align: 'center', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -24], w: 500, h: 40, bg: T.bg3, bgT: 0.05, r: 20, hidden: true, cls: 'toast' });
+  // z: above every panel, including ones features add after buildUI
+  label(overlay, 'toast', { text: '', size: 15, align: 'center', ax: 0.5, ay: 1, x: [0.5, 0], y: [1, -24], w: 500, h: 40, bg: T.bg3, bgT: 0.05, r: 20, hidden: true, cls: 'toast', z: 100 });
   frame(app, 'fader', { cls: 'fill fader nopointer', bg: '#000000' });
 }
 
