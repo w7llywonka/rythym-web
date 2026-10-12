@@ -277,7 +277,22 @@ function showTab(cat: UnlockCategory, instant = false) {
   }
   grid.replaceChildren(holder);
   grid.scrollTop = 0;
+  fitPlates(holder);
   repaint();
+}
+
+/**
+ * a tag / name color preview shows your whole name: the nameplate steps down from 15 to 13 px until it
+ * fits its box (filling it means the name is cut). A name too long even then stays full size and cuts
+ * off, so the tag being shown doesn't shrink for nothing (and cards next to each other look alike).
+ */
+function fitPlates(holder: HTMLElement) {
+  for (const np of holder.querySelectorAll<HTMLElement>('.lk-prev > .np')) {
+    const box = np.parentElement!, cs = getComputedStyle(box);
+    const room = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const fits = [15, 14, 13].some(px => { np.style.fontSize = `${px}px`; return np.offsetWidth < room; });
+    if (!fits) np.style.fontSize = '';
+  }
 }
 
 /** pop + flash on the card and on you, and your hit sound */

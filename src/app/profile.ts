@@ -56,21 +56,25 @@ function refresh() {
     $(id).style.cursor = unlocked ? 'pointer' : 'default';
   });
   refreshLockerBadges();
-  fitName();
+  fitCard();
 }
 
 /**
- * your whole name shows, tag and all: the name takes the room 'since' leaves on its line, then the
- * font steps down to 16 px (it measures, so the panel has to be showing)
+ * the card's two lines share their room (it measures, so the panel has to be showing): your name
+ * takes what 'since' leaves, then its font steps down to 16 px so it shows whole, tag and all; the
+ * streak / 1v1 line takes what your title leaves, so it stays right-aligned under 'since'
  */
-function fitName() {
-  const name = $('profile.me.name'), since = $('profile.me.since').querySelector('.tx') as HTMLElement;
-  name.style.width = `${Math.max(380, $('profile.me').offsetWidth - 36 - 16 - since.offsetWidth)}px`;
+function fitCard() {
+  const room = $('profile.me').offsetWidth - 36 - 16;
+  const tx = (path: string) => $(path).querySelector('.tx') as HTMLElement;
+  const name = $('profile.me.name');
+  name.style.width = `${Math.max(380, room - tx('profile.me.since').offsetWidth)}px`;
   const text = name.querySelector('.np-name') as HTMLElement;
   for (let size = 24; size >= 16; size -= 2) {
     name.style.fontSize = `${size}px`;
     if (text.scrollWidth <= text.clientWidth) break;
   }
+  $('profile.me.more').style.width = `${Math.max(240, room - tx('profile.me.title').offsetWidth)}px`;
 }
 
 export function openProfile() {
@@ -79,6 +83,8 @@ export function openProfile() {
 }
 
 export function initProfile() {
+  // fitCard gives the streak / 1v1 line its room; past that it cuts off rather than run off the card
+  $('profile.me.more').classList.add('trunc');
   ACHIEVEMENTS.forEach((a, i) => onClick(`profile.achievements.ach${i + 1}`, () => {
     if (!S.data.profile.achievements[a.id]) return;
     S.data.profile.title = S.data.profile.title === a.title ? '' : a.title;
