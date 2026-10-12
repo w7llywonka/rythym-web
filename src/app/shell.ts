@@ -4,6 +4,7 @@ import { T } from '../config.ts';
 import { $, show, txt } from '../ui.ts';
 import { audio } from './services.ts';
 import { S, type Screen } from './state.ts';
+import { activeTheme } from './unlocks.ts';
 
 export const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -11,7 +12,17 @@ export const escapeHtml = (s: string) =>
 export function showScreen(name: Screen) {
   for (const s of ['home', 'select', 'game', 'results'] as Screen[]) show($(s), s === name);
   S.screen = name;
-  if (name === 'home') setAmbient(T.cyan, T.pink);
+  if (name === 'home') applyTheme();
+}
+
+/** the home screen's glow in the menu theme (Settings → Visuals, or the Locker) */
+export function applyTheme() {
+  if (S.screen === 'home') setAmbient(...activeTheme().colors);
+}
+
+/** Settings → Reduce motion: CSS (style.css, .reduce-motion) holds still what pops, slides and pulses in the menus */
+export function setReducedMotion(on: boolean) {
+  document.documentElement.classList.toggle('reduce-motion', on);
 }
 
 let fadeTimer: number | undefined;
@@ -84,7 +95,9 @@ export function queueToast(text: string) {
 export function setToggle(toggle: HTMLElement, on: boolean) {
   toggle.style.backgroundColor = on ? T.cyan : T.bg3;
   const knob = toggle.querySelector('.knob') as HTMLElement;
-  knob.style.left = on ? `${toggle.offsetWidth - knob.offsetWidth - 3}px` : '3px';
+  // sizes from the layout, or (in a hidden tab, which has none) from the sizes it was built with
+  const w = toggle.offsetWidth || parseFloat(toggle.style.width), kw = knob.offsetWidth || parseFloat(knob.style.width);
+  knob.style.left = on ? `${w - kw - 3}px` : '3px';
   knob.style.backgroundColor = on ? T.bg0 : T.text;
 }
 
@@ -106,9 +119,10 @@ export const eventAge = (e: Event) => Math.min(0.1, Math.max(0, (performance.now
 
 export const signed = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
 
-/** recolor the background glows (they fade over ~1 s) */
+/** recolor the background glows (they fade over ~1 s), and the light behind the home logo */
 export function setAmbient(a: string, b: string) {
-  const bd = $('backdrop');
-  bd.style.setProperty('--ga', a);
-  bd.style.setProperty('--gb', b);
+  for (const el of [$('backdrop'), $('home.logoglow')]) {
+    el.style.setProperty('--ga', a);
+    el.style.setProperty('--gb', b);
+  }
 }

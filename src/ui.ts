@@ -1,5 +1,6 @@
 // Builds the whole interface as a 1100x640 "stage" that is scaled to fit the window, using the same
 // positions, sizes, colors and type as the Roblox version. Elements are looked up by dotted path: $('home.play').
+import { HIT_EFFECTS, THEMES } from '../shared/cosmetics.js';
 import { ACHIEVEMENTS, MOD_INFO, MOD_ORDER, STYLE_CARDS, STYLE_ORDER, SWATCHES, T, TAB_ORDER } from './config.ts';
 
 type UD = number | [number, number]; // pixels, or [scale, pixels] like Roblox's UDim
@@ -354,77 +355,11 @@ export function buildUI(app: HTMLElement) {
   button(pause, 'restart', { text: 'RESTART', size: 16, x: 40, y: 170, w: 320, h: 50 });
   button(pause, 'quit', { text: 'QUIT TO SONGS', size: 16, x: 40, y: 234, w: 320, h: 50 });
 
-  // settings
-  const st = panel(overlay, 'settings', 660, 610);
-  label(st, 'title', { text: 'Settings', font: 'black', size: 26, x: 32, y: 26, w: 400, h: 36 });
-  const header = (p: HTMLElement, name: string, text: string, y: number) =>
-    label(p, name, { text, font: 'black', size: 10, color: T.muted, x: 32, y, w: 300, h: 14 });
-  header(st, 'h1', 'CONTROLS', 84);
-  [T.cyan, T.pink, T.text].forEach((color, i) => {
-    const row = frame(st, `key${i + 1}`, { x: 32 + i * 202, y: 106, w: 192, h: 60, bg: T.bg2, r: 12 });
-    frame(row, 'dot', { ay: 0.5, x: 16, y: [0.5, 0], w: 12, h: 12, bg: color, r: 'full' });
-    label(row, 'label', { text: ['Button 1', 'Button 2', 'Restart'][i], size: 15, x: 34, y: 0, w: 80, h: 60 });
-    button(row, 'btn', { text: 'F', size: 14, ax: 1, ay: 0.5, x: [1, -10], y: [0.5, 0], w: 80, h: 40, r: 10, bg: T.bg1, stroke: i < 2 ? color : T.line });
-  });
-  label(st, 'keystatus', { text: 'Click a key, then press the new key.', font: 'med', size: 13, color: T.muted, x: 32, y: 172, w: 600, h: 18 });
-  header(st, 'h2', 'GAMEPLAY', 204);
-  const bigRow = (name: string, y: number, text: string, hint: string) => {
-    const row = frame(st, name, { x: 32, y, w: 596, h: 62, bg: T.bg2, r: 12 });
-    label(row, 'label', { text, size: 17, x: 18, y: 10, w: 300, h: 22 });
-    label(row, 'hint', { text: hint, font: 'med', size: 12, color: T.muted, x: 18, y: 33, w: 330, h: 16 });
-    button(row, 'minus', { text: '-', size: 22, ax: 1, ay: 0.5, x: [1, -176], y: [0.5, 0], w: 44, h: 42, r: 10, bg: T.bg1 });
-    label(row, 'value', { text: '-', font: 'black', size: 18, align: 'center', ax: 1, ay: 0.5, x: [1, -62], y: [0.5, 0], w: 110, h: 42 });
-    button(row, 'plus', { text: '+', size: 22, ax: 1, ay: 0.5, x: [1, -12], y: [0.5, 0], w: 44, h: 42, r: 10, bg: T.bg1 });
-    return row;
-  };
-  bigRow('scroll', 226, 'Scroll speed', 'How fast lines fall');
-  const off = bigRow('offset', 298, 'Audio offset', 'Late? lower it. Early? raise it.');
-  button(off, 'calibrate', { text: 'CALIBRATE', size: 13, x: 232, y: 10, w: 120, h: 42, r: 10, bg: T.bg1 });
-  header(st, 'h3', 'AUDIO & VISUALS', 374);
-  const half = (name: string, x: number, text: string) => {
-    const row = frame(st, name, { x, y: 396, w: 290, h: 62, bg: T.bg2, r: 12 });
-    label(row, 'label', { text, size: 15, x: 18, y: 0, w: 110, h: 62 });
-    stepper(row, '', 10, 66);
-    return row;
-  };
-  half('volume', 32, 'Music volume');
-  half('hitsound', 338, 'Hit sound');
-  const tog = (name: string, x: number, text: string) => {
-    const row = frame(st, name, { x, y: 468, w: 190, h: 62, bg: T.bg2, r: 12 });
-    label(row, 'label', { text, size: 15, x: 16, y: 0, w: 110, h: 62 });
-    toggle(row, 52, 28);
-  };
-  tog('effects', 32, 'Effects');
-  tog('centerhud', 235, 'Center combo');
-  tog('hitzone', 438, 'Hit zone');
-  button(st, 'customize', { text: 'CUSTOMIZE COLORS & LINES', size: 13, x: 32, y: 540, w: 360, h: 48 });
-  button(st, 'reset', { text: 'RESET DEFAULTS', size: 13, x: 404, y: 540, w: 224, h: 48, color: T.muted });
+  // settings: four tabs (controls, audio, visuals, HUD), then customize / reset
+  buildSettingsPanel(overlay);
 
-  // customize: lane / chord colors, line style and thickness, with a live preview
-  const cp = panel(overlay, 'custom', 620, 624);
-  label(cp, 'title', { text: 'Customize', font: 'black', size: 26, x: 32, y: 26, w: 400, h: 36 });
-  label(cp, 'sub', { text: 'Colors and lines. Saved with your settings.', font: 'med', size: 13, color: T.muted, x: 32, y: 62, w: 400, h: 18 });
-  frame(cp, 'preview', { x: 32, y: 96, w: 556, h: 150, bg: T.bg0, r: 14, stroke: T.line, clip: true });
-  const swatchRow = (name: string, y: number, text: string) => {
-    const row = frame(cp, name, { x: 32, y, w: 556, h: 50, bg: T.bg2, r: 12 });
-    label(row, 'label', { text, size: 14, x: 16, y: 0, w: 130, h: 50 });
-    SWATCHES.forEach((c, i) => node(row, `sw${i}`, { tag: 'button', ay: 0.5, x: 150 + i * 40, y: [0.5, 0], w: 26, h: 26, bg: c, r: 'full', cls: 'swatch' }));
-    const pick = node(row, 'pick', { tag: 'input', ay: 0.5, x: 150 + 8 * 40 + 8, y: [0.5, 0], w: 26, h: 26, r: 'full', cls: 'colorpick' }) as HTMLInputElement;
-    pick.type = 'color';
-    pick.title = 'Pick any color';
-  };
-  swatchRow('lane1', 262, 'Button 1');
-  swatchRow('lane2', 320, 'Button 2');
-  swatchRow('chord', 378, 'Chords');
-  const stepRow = (name: string, y: number, text: string) => {
-    const row = frame(cp, name, { x: 32, y, w: 556, h: 50, bg: T.bg2, r: 12 });
-    label(row, 'label', { text, size: 14, x: 16, y: 0, w: 200, h: 50 });
-    stepper(row, '', 10, 110, 34, 14);
-  };
-  stepRow('style', 436, 'Line style');
-  stepRow('size', 494, 'Line thickness');
-  button(cp, 'reset', { text: 'RESET LOOK', size: 13, x: 32, y: 558, w: 200, h: 44, color: T.muted });
-  button(cp, 'done', { text: 'DONE', size: 15, ax: 1, x: 588, y: 558, w: 180, h: 44 }, 'primary');
+  // customize: lane / chord colors, line style (every skin, locked ones too) and thickness, with a live preview
+  buildCustomPanel(overlay);
 
   // style
   const sp = panel(overlay, 'style', 700, 600);
@@ -627,6 +562,164 @@ function buildAppPanel(overlay: HTMLElement) {
   label(ap, 'version', { text: '', font: 'med', size: 12, color: T.dim, x: 32, y: 556, w: 280, h: 20 });
   button(ap, 'check', { text: 'CHECK FOR UPDATES', size: 12, ax: 1, x: 548, y: 548, w: 220, h: 36, r: 10, hidden: true });
   button(ap, 'update', { text: 'RESTART TO UPDATE', size: 12, ax: 1, x: 548, y: 548, w: 220, h: 36, r: 10, hidden: true }, 'primary');
+}
+
+/**
+ * Settings: tabs over four pages (settings.controls / .audio / .visuals / .hud), each 596x390 at y 138,
+ * then CUSTOMIZE COLORS & LINES and RESET DEFAULTS. src/app/settingsPanel.ts fills them in.
+ */
+function buildSettingsPanel(overlay: HTMLElement) {
+  const st = panel(overlay, 'settings', 660, 610);
+  label(st, 'title', { text: 'Settings', font: 'black', size: 26, x: 32, y: 26, w: 400, h: 36 });
+  const tabs = frame(st, 'tabs', { x: 32, y: 78, w: 596, h: 44, bg: T.bg2, r: 12 });
+  frame(tabs, 'highlight', { x: 4, y: 4, w: 141, h: 36, r: 9, cls: 'slide' });
+  ['controls', 'audio', 'visuals', 'hud'].forEach((id, i) => {
+    node(tabs, id, { tag: 'button', text: id.toUpperCase(), font: 'black', size: 12, align: 'center', color: T.muted, x: i * 149, y: 0, w: 149, h: 44, cls: 'tab' });
+  });
+  const page = (name: string) => frame(st, name, { x: 32, y: 138, w: 596, h: 390, hidden: true });
+  // a row: a name, and a hint under it when there is one
+  const row = (p: HTMLElement, name: string, x: number, y: number, w: number, h: number, text: string, hint?: string, textW = w - 36) => {
+    const r = frame(p, name, { x, y, w, h, bg: T.bg2, r: 12 });
+    label(r, 'label', { text, size: hint === undefined ? 15 : 16, x: 18, y: hint === undefined ? 0 : 11, w: textW, h: hint === undefined ? h : 20 });
+    if (hint !== undefined) label(r, 'hint', { text: hint, font: 'med', size: 12, color: T.muted, truncate: true, x: 18, y: 33, w: textW, h: 16 });
+    return r;
+  };
+  const bigRow = (p: HTMLElement, name: string, y: number, text: string, hint: string) => {
+    const r = row(p, name, 0, y, 596, 62, text, hint, 200);
+    button(r, 'minus', { text: '-', size: 22, ax: 1, ay: 0.5, x: [1, -176], y: [0.5, 0], w: 44, h: 42, r: 10, bg: T.bg1 });
+    label(r, 'value', { text: '-', font: 'black', size: 18, align: 'center', ax: 1, ay: 0.5, x: [1, -62], y: [0.5, 0], w: 110, h: 42 });
+    button(r, 'plus', { text: '+', size: 22, ax: 1, ay: 0.5, x: [1, -12], y: [0.5, 0], w: 44, h: 42, r: 10, bg: T.bg1 });
+    return r;
+  };
+  const togRow = (p: HTMLElement, name: string, x: number, y: number, w: number, text: string, hint: string) => {
+    const r = row(p, name, x, y, w, 62, text, hint, w - 96);
+    toggle(r, 52, 28);
+    return r;
+  };
+
+  // CONTROLS: key binds, scroll speed, audio offset, and the keys worth knowing
+  const ctl = page('controls');
+  [T.cyan, T.pink, T.text].forEach((color, i) => {
+    const r = frame(ctl, `key${i + 1}`, { x: i * 202, y: 0, w: 192, h: 60, bg: T.bg2, r: 12 });
+    frame(r, 'dot', { ay: 0.5, x: 16, y: [0.5, 0], w: 12, h: 12, bg: color, r: 'full' });
+    label(r, 'label', { text: ['Button 1', 'Button 2', 'Restart'][i], size: 15, x: 34, y: 0, w: 80, h: 60 });
+    button(r, 'btn', { text: 'F', size: 14, ax: 1, ay: 0.5, x: [1, -10], y: [0.5, 0], w: 80, h: 40, r: 10, bg: T.bg1, stroke: i < 2 ? color : T.line });
+  });
+  label(ctl, 'keystatus', { text: 'Click a key, then press the new key.', font: 'med', size: 13, color: T.muted, x: 2, y: 68, w: 594, h: 18 });
+  bigRow(ctl, 'scroll', 98, 'Scroll speed', 'How fast lines fall');
+  const off = bigRow(ctl, 'offset', 170, 'Audio offset', 'Late? lower it. Early? raise it.');
+  button(off, 'calibrate', { text: 'CALIBRATE', size: 13, x: 232, y: 10, w: 120, h: 42, r: 10, bg: T.bg1 });
+  const tips = frame(ctl, 'tips', { x: 0, y: 254, w: 596, h: 92, r: 12, stroke: T.line });
+  label(tips, 'header', { text: 'GOOD TO KNOW', font: 'black', size: 10, color: T.muted, x: 18, y: 14, w: 300, h: 14 });
+  label(tips, 'text', { html: '', font: 'med', size: 13, color: T.muted, wrap: true, valign: 'top', x: 18, y: 34, w: 560, h: 50 });
+
+  // AUDIO
+  const au = page('audio');
+  bigRow(au, 'volume', 0, 'Music volume', 'Songs and the menu music');
+  bigRow(au, 'hitsound', 72, 'Hit sound', 'Plays on every press');
+  bigRow(au, 'hitvolume', 144, 'Hit sound volume', 'Separate from the music');
+  togRow(au, 'menumusic', 0, 216, 596, 'Menu music', 'Song previews play behind the menus');
+  const atips = frame(au, 'tips', { x: 0, y: 300, w: 596, h: 76, r: 12, stroke: T.line });
+  label(atips, 'header', { text: 'HITS FEEL LATE?', font: 'black', size: 10, color: T.muted, x: 18, y: 14, w: 300, h: 14 });
+  label(atips, 'text', { text: 'Wireless headphones and some speakers add a delay. Tap along once and the game will match it.', font: 'med', size: 13, color: T.muted, wrap: true, valign: 'top', x: 18, y: 32, w: 400, h: 36 });
+  button(atips, 'calibrate', { text: 'CALIBRATE', size: 13, ax: 1, ay: 0.5, x: [1, -16], y: [0.5, 0], w: 120, h: 42, r: 10, bg: T.bg2 });
+
+  // VISUALS: effects, hit zone, lane dim, motion, then the hit effect and menu theme pickers
+  const vis = page('visuals');
+  togRow(vis, 'effects', 0, 0, 293, 'Effects', 'Glows, beams and hit effects');
+  togRow(vis, 'hitzone', 303, 0, 293, 'Hit zone', 'Where Perfect and Good count');
+  const dim = row(vis, 'lanedim', 0, 72, 293, 62, 'Lane dim', 'Darker lanes', 110);
+  stepper(dim, '', 10, 56, 34, 14);
+  togRow(vis, 'motion', 303, 72, 293, 'Reduce motion', 'Fewer pops and pulses');
+  const fx = row(vis, 'hiteffect', 0, 144, 596, 126, 'Hit effect', '', 390);
+  HIT_EFFECTS.forEach((e, i) => {
+    node(fx, `fx${i}`, { tag: 'button', text: e.label, font: 'bold', size: 12, align: 'center', x: 18 + (i % 3) * 132, y: 56 + Math.floor(i / 3) * 34, w: 124, h: 28, r: 8, cls: 'schip' });
+  });
+  // a line falls onto a button and hits it, over and over, in the effect you're looking at
+  const fxp = frame(fx, 'preview', { x: 424, y: 12, w: 160, h: 102, bg: T.bg0, r: 10, stroke: T.line, clip: true });
+  frame(fxp, 'lane', { ax: 0.5, x: [0.5, 0], y: 0, w: 78, h: 102, cls: 'lane nopointer' });
+  frame(fxp, 'line', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: 80, w: 60, h: 3, r: 2, bg: T.cyan });
+  frame(fxp, 'layer', { cls: 'fill nopointer' });
+  const th = row(vis, 'theme', 0, 280, 596, 104, 'Menu theme', '', 560);
+  THEMES.forEach((t, i) => {
+    node(th, `th${i}`, { tag: 'button', text: t.label, font: 'bold', size: 11, align: 'center', x: 18 + i * 80, y: 58, w: 74, h: 32, r: 9, cls: 'schip theme' });
+  });
+
+  // HUD: judgments, timing, timing bar, combo position, FPS, and a preview of all of it
+  const hud = page('hud');
+  const jr = row(hud, 'judge', 0, 0, 596, 62, 'Judgments', 'PERFECT, GREAT, GOOD and MISS on each hit', 280);
+  const seg = frame(jr, 'seg', { ax: 1, ay: 0.5, x: [1, -12], y: [0.5, 0], w: 276, h: 42, bg: T.bg1, r: 10 });
+  frame(seg, 'highlight', { x: 3, y: 3, w: 88, h: 36, r: 8, cls: 'slide' });
+  ['full', 'minimal', 'off'].forEach((id, i) => {
+    node(seg, id, { tag: 'button', text: id.toUpperCase(), font: 'black', size: 11, align: 'center', color: T.muted, x: 2 + i * 91, y: 0, w: 90, h: 42, cls: 'tab' });
+  });
+  togRow(hud, 'timing', 0, 72, 293, 'Timing (ms)', 'EARLY 12ms under each one');
+  togRow(hud, 'meter', 303, 72, 293, 'Timing bar', 'Early / late, on the right');
+  togRow(hud, 'centerhud', 0, 144, 293, 'Center combo', 'In the middle of the lanes');
+  togRow(hud, 'fps', 303, 144, 293, 'FPS counter', 'Frames per second in a song');
+  const hp = frame(hud, 'preview', { x: 0, y: 216, w: 596, h: 164, bg: T.bg0, r: 12, stroke: T.line, clip: true });
+  label(hp, 'caption', { text: 'PREVIEW', font: 'black', size: 10, color: T.dim, x: 18, y: 16, w: 120, h: 14 });
+  label(hp, 'note', { text: 'How it looks in a song', font: 'med', size: 12, color: T.muted, x: 18, y: 34, w: 180, h: 16 });
+  const mpf = frame(hp, 'pf', { x: 222, y: 12, w: 152, h: 140, bg: T.bg1, r: 10 });
+  for (const i of [1, 2]) {
+    const ln = frame(mpf, `lane${i}`, { x: i === 1 ? 6 : 78, y: 6, w: 68, h: 128, r: 7, cls: 'lane' });
+    frame(ln, 'note', { ax: 0.5, x: [0.5, 0], y: i === 1 ? 26 : 58, w: 54, h: 9, r: 5 });
+    frame(ln, 'line', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: 108, w: 50, h: 2, r: 1 });
+  }
+  const cc = frame(mpf, 'combo', { ax: 0.5, x: [0.5, 0], y: 26, w: 150, h: 44 });
+  label(cc, 'value', { text: '48', font: 'black', size: 30, textT: 0.55, align: 'center', w: 150, h: 32 });
+  label(cc, 'label', { text: 'COMBO', font: 'black', size: 8, textT: 0.6, align: 'center', y: 31, w: 150, h: 10 });
+  label(mpf, 'judgment', { text: 'PERFECT', font: 'black', size: 17, color: T.gold, align: 'center', ax: 0.5, x: [0.5, 0], y: 74, w: 150, h: 22, cls: 'stroked' });
+  label(mpf, 'timing', { text: 'EARLY 12ms', size: 9, color: T.cyan, align: 'center', ax: 0.5, x: [0.5, 0], y: 96, w: 150, h: 12 });
+  const meter = frame(hp, 'meter', { x: 432, y: 18, w: 140, h: 32 });
+  label(meter, 'label', { text: 'TIMING', font: 'black', size: 8, color: T.muted, w: 60, h: 10 });
+  const mb = frame(meter, 'bar', { x: 0, y: 15, w: 140, h: 8, bg: T.bg2, r: 4, clip: true });
+  frame(mb, 'good', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.5, 0], w: [1, 0], h: [0.5, 0], bg: T.green, bgT: 0.7 });
+  frame(mb, 'great', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.5, 0], w: [0.6, 0], h: [0.5, 0], bg: T.cyan, bgT: 0.6 });
+  frame(mb, 'perfect', { ax: 0.5, ay: 0.5, x: [0.5, 0], y: [0.5, 0], w: [0.3, 0], h: [0.5, 0], bg: T.gold, bgT: 0.45 });
+  frame(mb, 'center', { ax: 0.5, x: [0.5, 0], w: 2, h: [1, 0], bg: '#FFFFFF' });
+  [[52, T.gold], [61, T.gold], [83, T.cyan], [44, T.cyan]].forEach(([x, c], i) => frame(mb, `tick${i}`, { x: x as number, w: 2, h: [1, 0], bg: c as string }));
+  const sc = frame(hp, 'combo', { x: 392, y: 54, w: 180, h: 40 });
+  label(sc, 'label', { text: 'COMBO', font: 'black', size: 8, color: T.muted, align: 'right', w: 180, h: 10 });
+  label(sc, 'value', { text: '48', font: 'black', size: 26, align: 'right', y: 9, w: 180, h: 30 });
+  label(hp, 'judgment', { text: 'PERFECT', font: 'black', size: 16, color: T.gold, align: 'right', x: 392, y: 98, w: 180, h: 22 });
+  label(hp, 'timing', { text: 'EARLY 12ms', size: 9, color: T.cyan, align: 'right', x: 392, y: 121, w: 180, h: 12 });
+  label(hp, 'fps', { text: '60 FPS', font: 'black', size: 9, color: T.muted, align: 'right', ax: 1, ay: 1, x: [1, -16], y: [1, -12], w: 80, h: 12 });
+
+  button(st, 'customize', { text: 'CUSTOMIZE COLORS & LINES', size: 13, x: 32, y: 540, w: 360, h: 48 });
+  button(st, 'reset', { text: 'RESET DEFAULTS', size: 13, x: 404, y: 540, w: 224, h: 48, color: T.muted });
+}
+
+/** Customize: the preview (with the skin's name and how to unlock it), color rows, line style and thickness */
+function buildCustomPanel(overlay: HTMLElement) {
+  const cp = panel(overlay, 'custom', 620, 624);
+  label(cp, 'title', { text: 'Customize', font: 'black', size: 26, x: 32, y: 26, w: 400, h: 36 });
+  label(cp, 'sub', { text: 'Colors and lines. Play to unlock more line skins.', font: 'med', size: 13, color: T.muted, x: 32, y: 62, w: 440, h: 18 });
+  frame(cp, 'preview', { x: 32, y: 96, w: 556, h: 150, bg: T.bg0, r: 14, stroke: T.line, clip: true });
+  // over the preview's empty left side: which skin it is, and what it is / how to get it
+  label(cp, 'skinname', { text: '', font: 'black', size: 18, truncate: true, x: 52, y: 114, w: 150, h: 24, cls: 'nopointer' });
+  label(cp, 'skindesc', { html: '', font: 'med', size: 12, color: T.muted, wrap: true, valign: 'top', x: 52, y: 140, w: 140, h: 60, cls: 'nopointer' });
+  label(cp, 'locked', { text: 'LOCKED', font: 'black', size: 10, color: T.gold, align: 'center', x: 52, y: 208, w: 72, h: 22, r: 11, bg: T.gold, bgT: 0.86, hidden: true, cls: 'nopointer' });
+  const swatchRow = (name: string, y: number, text: string) => {
+    const row = frame(cp, name, { x: 32, y, w: 556, h: 50, bg: T.bg2, r: 12 });
+    label(row, 'label', { text, size: 14, x: 16, y: 0, w: 130, h: 50 });
+    SWATCHES.forEach((c, i) => node(row, `sw${i}`, { tag: 'button', ay: 0.5, x: 150 + i * 40, y: [0.5, 0], w: 26, h: 26, bg: c, r: 'full', cls: 'swatch' }));
+    const pick = node(row, 'pick', { tag: 'input', ay: 0.5, x: 150 + 8 * 40 + 8, y: [0.5, 0], w: 26, h: 26, r: 'full', cls: 'colorpick' }) as HTMLInputElement;
+    pick.type = 'color';
+    pick.title = 'Pick any color';
+  };
+  swatchRow('lane1', 262, 'Button 1');
+  swatchRow('lane2', 320, 'Button 2');
+  swatchRow('chord', 378, 'Chords');
+  const style = frame(cp, 'style', { x: 32, y: 436, w: 556, h: 50, bg: T.bg2, r: 12 });
+  label(style, 'label', { text: 'Line style', size: 14, x: 16, y: 8, w: 200, h: 18 });
+  label(style, 'hint', { text: '', font: 'med', size: 11, color: T.muted, x: 16, y: 27, w: 300, h: 14 });
+  stepper(style, '', 10, 110, 34, 14);
+  const size = frame(cp, 'size', { x: 32, y: 494, w: 556, h: 50, bg: T.bg2, r: 12 });
+  label(size, 'label', { text: 'Line thickness', size: 14, x: 16, y: 0, w: 200, h: 50 });
+  stepper(size, '', 10, 110, 34, 14);
+  button(cp, 'reset', { text: 'RESET LOOK', size: 13, x: 32, y: 558, w: 200, h: 44, color: T.muted });
+  button(cp, 'done', { text: 'DONE', size: 15, ax: 1, x: 588, y: 558, w: 180, h: 44 }, 'primary');
 }
 
 /** Scales the 1100x640 stages to fit the window (same rule as the Roblox UIScale). */

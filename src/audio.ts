@@ -12,6 +12,7 @@ export class AudioEngine {
   private gainNode: GainNode | null = null;
   private hitBuffers = new Map<HitSound, AudioBuffer>();
   private volume = 0.8;
+  private hitVolume = 0.8;
   /** ctx time at which `playOffset` of the track is heard, and the playback rate */
   private playStart = 0;
   private playOffset = 0;
@@ -33,6 +34,7 @@ export class AudioEngine {
       this.hitBus.connect(this.ctx.destination);
       this.buildHitSounds();
       this.setVolume(this.volume);
+      this.setHitVolume(this.hitVolume);
     }
     return this.ctx;
   }
@@ -58,6 +60,12 @@ export class AudioEngine {
   setVolume(v: number) {
     this.volume = v;
     if (this.ctx && this.master) this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.02);
+  }
+
+  /** hit sounds have their own volume, separate from the music */
+  setHitVolume(v: number) {
+    this.hitVolume = v;
+    if (this.ctx && this.hitBus) this.hitBus.gain.setTargetAtTime(v, this.ctx.currentTime, 0.02);
   }
 
   // what you hear lags the audio clock by the processing (base) latency plus the device (output) latency

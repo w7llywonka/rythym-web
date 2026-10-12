@@ -1,12 +1,13 @@
 // Gameplay: one run of a chart. Port of the Roblox run loop (holds, mines, modifiers, judgments, HUD).
 // Song time comes from the Web Audio clock so notes follow exactly what you hear.
 import { cancel, ease, fade, pop, tween } from './anim.ts';
+import { fpsColor, hudLook } from './app/settingsView.ts';
 import type { AudioEngine } from './audio.ts';
 import { JUDGMENTS, K, MINE_HIT, MISS, MODES, STYLES, T, type Judgment, type Mode, type Style } from './config.ts';
-import { lighten, styleHold, styleNote } from './look.ts';
+import { laneLook, lighten, playHitEffect, styleHold, styleNote } from './look.ts';
 import { comboMultiplier, fmtTime, formatNumber, keyName, setMultiplier, setSummary } from './scoring.ts';
-import type { Diff, Lane, PlaySet, Settings, Track } from './types.ts';
-import { $, rgba, show, txt } from './ui.ts';
+import type { Diff, HitEffect, Lane, NoteStyle, PlaySet, Settings, Track } from './types.ts';
+import { $, label, rgba, show, txt } from './ui.ts';
 
 /** versus: a 1v1 run. leadIn() = seconds until the shared server start moment. */
 export interface RunOpts {
@@ -32,10 +33,14 @@ export interface Run {
   score: number; combo: number; maxCombo: number; counts: [number, number, number, number]; judged: number; accSum: number; health: number;
   ready: boolean; paused: boolean; pausedAt: number; resumeAt?: number; ended: boolean; musicStarted: boolean;
   anchorPos: number; anchorCtx: number; buffer?: AudioBuffer;
+  /** the line skin and hit effect worn for this run (only unlocked ones) */
+  noteStyle: NoteStyle; hitEffect: HitEffect;
 }
 
 export interface GameHooks {
   settings: () => Settings;
+  /** what the player wears: the chosen line skin / hit effect if unlocked, else the defaults */
+  look: () => { noteStyle: NoteStyle; hitEffect: HitEffect };
   onFinish: (run: Run, cleared: boolean) => void;
   onLoadFail: (run: Run) => void;
   showGame: (setup: () => void, quick: boolean) => Promise<void>;
@@ -44,6 +49,8 @@ export interface GameHooks {
 const LANE_X: Record<number, number> = { 1: 12, 2: 176 };
 const LANE_W = 156;
 const HIT_Y = 576 - 14 - 104 / 2; // receptor centre inside the lane
+/** end-of-run messages (CLEAR!, FAILED...) always show full size, whatever the judgment setting */
+const FULL_HUD = hudLook({ judgeStyle: 'Full', showTiming: true });
 
 /** the closest step of a beat-tracked grid (imports) */
 function nearestGridTime(grid: number[], t: number) {
@@ -61,17 +68,25 @@ export class Game {
   private comboEl!: HTMLElement;
   private held: Record<number, boolean> = { 1: false, 2: false };
   private cue: Record<number, number> = { 1: -1, 2: -1 };
+  /** judgments (Full / Minimal / Off), the timing line, the timing bar: from the settings */
+  private hud = FULL_HUD;
+  private meterOn = true;
+  private fpsEl: HTMLElement | null = null;
+  private fps = { frames: 0, since: 0 };
 
   /** no DOM work here: the UI is built after the modules load; call applyHudLayout() once it exists */
   constructor(private audio: AudioEngine, private hooks: GameHooks) {}
 
   private laneColor(lane: Lane) { return this.hooks.settings().laneColors[lane - 1]; }
 
-  /** paints buttons, beams and hit zones in the chosen lane colors */
+  /** paints buttons, beams and hit zones in the chosen lane colors, and dims the lanes */
   applyLook() {
+    const dim = laneLook(this.hooks.settings().laneDim);
+    $('game.pf').style.backgroundColor = dim.field;
     for (const lane of [1, 2] as Lane[]) {
       const c = this.laneColor(lane);
       const p = `game.pf.lane${lane}`;
+      $(p).style.background = dim.lane;
       $(`${p}.rec`).style.boxShadow = `0 0 0 1.5px ${rgba(c, 0.45)}`;
       $(`${p}.rec.glow`).style.backgroundColor = c;
       $(`${p}.rec.heldglow`).style.backgroundColor = c;
@@ -91,13 +106,40 @@ export class Game {
 
   // ---- HUD pieces ----
   applyHudLayout() {
-    this.hudCenter = this.hooks.settings().centerHud;
+    const s = this.hooks.settings();
+    this.hudCenter = s.centerHud;
+    this.hud = hudLook(s);
     const center = { judgment: $('game.pf.judgment'), timing: $('game.pf.timing'), combo: $('game.pf.combo') };
     const side = { judgment: $('game.right.sidejudgment'), timing: $('game.right.sidetiming'), combo: $('game.right.sidecombo') };
     const on = this.hudCenter ? center : side, off = this.hudCenter ? side : center;
     this.judgeEl = on.judgment; this.timingEl = on.timing; this.comboEl = on.combo;
     for (const el of [on.judgment, on.timing, on.combo]) show(el, true);
     for (const el of [off.judgment, off.timing, off.combo]) show(el, false);
+    this.meterOn = s.showMeter;
+    show($('game.right.timing'), s.showMeter);
+    show(this.fpsLabel(), s.showFps);
+  }
+
+  /** the FPS counter, bottom right of the game screen (made the first time it's needed) */
+  private fpsLabel() {
+    this.fpsEl ??= label($('game'), 'fps', { text: '', font: 'black', size: 11, color: T.muted, align: 'right', ax: 1, ay: 1, x: [1, -40], y: [1, -14], w: 120, h: 16, cls: 'nopointer' });
+    return this.fpsEl;
+  }
+
+  /** counts frames and shows the rate twice a second */
+  private countFps() {
+    const el = this.fpsEl;
+    if (!el || el.hidden) return;
+    const now = performance.now();
+    // first frame, or back after a pause in frames (hidden tab): start counting again
+    if (!this.fps.since || now - this.fps.since > 2000) { this.fps = { frames: 0, since: now }; return; }
+    this.fps.frames++;
+    const dt = now - this.fps.since;
+    if (dt < 500) return;
+    const fps = Math.round((this.fps.frames * 1000) / dt);
+    txt(el, `${fps} FPS`);
+    el.style.color = fpsColor(fps);
+    this.fps = { frames: 0, since: now };
   }
 
   private setCountdown(text: string, small = false) {
@@ -109,13 +151,18 @@ export class Game {
     if (text && !small) pop(el, 1.4, 0.25, ease.back);
   }
 
-  private showJudgment(j: { name: string; color: string }, timing?: string, timingColor = T.muted, hold = 0.45) {
+  /** `always`: end-of-run messages, shown full size even with judgments set to Minimal or Off */
+  private showJudgment(j: { name: string; color: string }, timing?: string, timingColor = T.muted, hold = 0.45, always = false) {
+    if (!always && !this.hud.judge) return;
     const el = this.judgeEl, tel = this.timingEl;
+    const look = always ? FULL_HUD : this.hud;
+    el.style.fontSize = `${this.hudCenter ? look.size.center : look.size.side}px`;
+    tel.style.fontSize = `${this.hudCenter ? look.timingSize.center : look.timingSize.side}px`;
     txt(el, j.name);
     el.style.color = j.color;
     el.style.opacity = '1';
-    pop(el, 1.3, 0.12);
-    txt(tel, timing ?? '');
+    pop(el, look.pop, 0.12);
+    txt(tel, look.timing ? timing ?? '' : '');
     tel.style.color = timingColor;
     tel.style.opacity = '1';
     fade(el, 0, 0.3, hold);
@@ -180,18 +227,11 @@ export class Game {
     }
   }
 
-  private ring(lane: Lane, color: string) {
+  /** the hit effect the player wears (Ring, Burst, Sparks...), unless effects are off */
+  private hitFx(r: Run, lane: Lane, color: string, perfect: boolean) {
     if (!this.hooks.settings().effects) return;
-    const r = document.createElement('div');
-    r.className = 'ring';
-    r.style.left = `${LANE_X[lane] + LANE_W / 2}px`;
-    r.style.top = `${12 + HIT_Y}px`;
-    $('game.pf.effects').appendChild(r);
-    tween(r, 'ring', 0, 1, 0.35, k => {
-      const size = 90 + 100 * k;
-      r.style.width = r.style.height = `${size}px`;
-      r.style.boxShadow = `0 0 0 ${6 - 5 * k}px ${rgba(color, k)}`;
-    }, ease.quad, 0, () => r.remove());
+    const at = { x: LANE_X[lane] + LANE_W / 2, y: 12 + HIT_Y, laneX: LANE_X[lane], laneW: LANE_W, top: 12 };
+    playHitEffect($('game.pf.effects'), r.hitEffect, color, at, perfect);
   }
 
   pressFx(lane: Lane) {
@@ -262,7 +302,7 @@ export class Game {
     fade(m, 0, 0.45, 0.15, ease.quad, () => m.remove());
   }
 
-  private makeNote(n: RunNote) {
+  private makeNote(r: Run, n: RunNote) {
     const lane = $(`game.pf.lane${n.lane}.notes`);
     const s = this.hooks.settings();
     const color = n.mine ? '#FF283C' : n.chord ? s.chordColor : this.laneColor(n.lane);
@@ -272,7 +312,7 @@ export class Game {
       body.className = 'hold';
       const cap = document.createElement('div');
       cap.className = 'cap';
-      styleHold(body, cap, color, s.noteStyle);
+      styleHold(body, cap, color, r.noteStyle);
       body.appendChild(cap);
       lane.appendChild(body);
       n.body = body;
@@ -281,7 +321,8 @@ export class Game {
     el.className = 'note';
     const bar = document.createElement('div');
     bar.className = 'bar';
-    styleNote(el, bar, color, s.noteStyle, s.noteSize, effects);
+    // mines always look the same, so they can't be missed in any skin
+    styleNote(el, bar, color, n.mine ? 'Glow' : r.noteStyle, s.noteSize, effects);
     if (n.mine) {
       bar.style.background = 'linear-gradient(180deg, #5A000F, #280008)';
       bar.style.boxShadow = `0 0 0 2.5px ${color}`;
@@ -333,7 +374,7 @@ export class Game {
     r.score += j.score * comboMultiplier(r.combo) * r.mult;
     if (!r.style.noHeal) r.health = Math.min(100, r.health + r.mode.heal[level]);
     this.setCombo(r.combo, true);
-    this.ring(lane, j.color);
+    this.hitFx(r, lane, j.color, level === 0);
     this.updateHud(r);
     return j;
   }
@@ -358,7 +399,7 @@ export class Game {
     const j = this.scoreHit(r, lane, level);
     if (!r.auto) {
       r.errors.push(errReal);
-      this.addTick(r, errReal, j.color);
+      if (this.meterOn) this.addTick(r, errReal, j.color);
     }
     const ms = Math.round(ad * 1000);
     const timing = ms === 0 ? 'ON TIME' : `${errReal < 0 ? 'EARLY' : 'LATE'}  ${ms}ms`;
@@ -416,7 +457,7 @@ export class Game {
     r.missMarks.push(r.samples.length + 1);
     this.showJudgment(MINE_HIT);
     this.setCombo(0);
-    this.ring(lane, T.red);
+    this.hitFx(r, lane, T.red, false);
     this.flashReceptor(lane, T.red);
     this.updateHud(r);
   }
@@ -576,6 +617,7 @@ export class Game {
       errors: [], samples: [], missMarks: [], lastSample: 0, playStart: performance.now(),
       score: 0, combo: 0, maxCombo: 0, counts: [0, 0, 0, 0], judged: 0, accSum: 0, health: 100,
       ready: false, paused: false, pausedAt: 0, ended: false, musicStarted: false, anchorPos: 0, anchorCtx: 0,
+      ...this.hooks.look(),
     };
     this.run = r;
 
@@ -666,6 +708,7 @@ export class Game {
   /** called every animation frame */
   step() {
     const r = this.run;
+    if (r) this.countFps();
     if (!r || !r.ready) return;
     let t = this.songTime(r);
 
@@ -702,7 +745,7 @@ export class Game {
     while (r.spawnIndex < r.notes.length) {
       const n = r.notes[r.spawnIndex];
       if (n.time + r.offset - r.fallSong > t) break;
-      this.makeNote(n);
+      this.makeNote(r, n);
       r.active[n.lane].push(n);
       r.spawnIndex++;
     }
@@ -800,16 +843,16 @@ export class Game {
     r.ended = true;
     if (r.practice) {
       // practice loops the section until you quit
-      this.showJudgment({ name: 'LOOP', color: T.cyan }, `again from ${fmtTime(r.startAt - (r.track.chartStart ?? 0))}`, T.muted, 0.6);
+      this.showJudgment({ name: 'LOOP', color: T.cyan }, `again from ${fmtTime(r.startAt - (r.track.chartStart ?? 0))}`, T.muted, 0.6, true);
       setTimeout(() => { if (this.run === r) void this.start(r.track, r.chartDiff, true, r.opts, r.set); }, 900);
       return;
     }
     if (cleared) {
       const fc = r.counts[3] === 0;
-      this.showJudgment({ name: fc ? 'FULL COMBO!' : 'CLEAR!', color: fc ? T.gold : T.green }, undefined, T.muted, 2);
+      this.showJudgment({ name: fc ? 'FULL COMBO!' : 'CLEAR!', color: fc ? T.gold : T.green }, undefined, T.muted, 2, true);
       this.audio.fade(0, 1.5);
     } else {
-      this.showJudgment({ name: 'FAILED', color: T.red }, `press ${keyName(this.hooks.settings().keys[2])} to retry`, T.muted, 2);
+      this.showJudgment({ name: 'FAILED', color: T.red }, `press ${keyName(this.hooks.settings().keys[2])} to retry`, T.muted, 2, true);
       this.audio.failSlowdown(1.4);
     }
     setTimeout(() => {
