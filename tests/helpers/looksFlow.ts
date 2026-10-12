@@ -4,7 +4,9 @@ import { createAuth } from '../../api/_lib/core.js';
 
 const PASS = 'linen-orbit-72-maple';
 
-type Store = { mget: (...keys: string[]) => Promise<(string | null)[]>; set: (k: string, v: string) => Promise<boolean> };
+type Store = {
+  mget: (...keys: string[]) => Promise<(string | null)[]>; set: (k: string, v: string) => Promise<boolean>; smembers: (k: string) => Promise<string[]>;
+};
 type Res = { status: number; body: any };
 
 export async function looksFlow(store: Store) {
@@ -34,11 +36,11 @@ export async function looksFlow(store: Store) {
     (await alice('POST', 'profile/look', { title: 'Rookie', tag: 'veteran', color: 'gold' })).body,
     (await bob('POST', 'profile/look', { tag: '<script>', color: 'aurora' })).body,
   ];
-  await store.set('title:carol', 'Old Timer'); // from before looks
+  await store.set('title:carol', 'Hard Hitter'); // from before looks
 
   const submits = [
     (await alice('POST', 'scores/submit', { ...run, score: 5000, title: 'Rookie', tag: 'veteran', color: 'gold' })).status,
-    (await bob('POST', 'scores/submit', { ...run, score: 6000, title: 'Grinder' })).status, // old game: title only
+    (await bob('POST', 'scores/submit', { ...run, score: 6000, title: 'Centurion' })).status, // old game: title only
     (await carol('POST', 'scores/submit', { ...run, score: 4000 })).status, // no look at all
   ];
   const board = (await alice('GET', 'scores/board', undefined, { songId: 'current', diff: 'Hard' })).body;
@@ -50,11 +52,13 @@ export async function looksFlow(store: Store) {
   const { from, tag, color } = (await bob('GET', 'versus/poll')).body.incoming;
   const match = (await bob('POST', 'versus/respond', { from: 'alice', accept: true })).body.match;
   const aliceSees = (await alice('GET', 'versus/poll')).body.match.opponentLook;
+  // bob took #1 from alice, so he can wear '#1' (not Royal: he was never King)
+  const earned = { look: (await bob('POST', 'profile/look', { tag: 'top1', color: 'royal' })).body.look, set: await store.smembers('earned:bob') };
 
   const deleted = (await carol('POST', 'auth/delete', { password: PASS })).status;
   return {
     looks, submits, board, feed, lobby,
-    incoming: { from, tag, color }, bobSees: match.opponentLook, aliceSees,
+    incoming: { from, tag, color }, bobSees: match.opponentLook, aliceSees, earned,
     afterDelete: { deleted, keys: await store.mget('look:carol', 'title:carol'), othersKept: await store.mget('look:alice') },
   };
 }
@@ -68,9 +72,9 @@ export const EXPECTED = {
   submits: [200, 200, 200],
   board: {
     entries: [
-      { rank: 1, name: 'bob', title: 'Grinder', tag: '', color: 'aurora', score: 6000 },
+      { rank: 1, name: 'bob', title: 'Centurion', tag: '', color: 'aurora', score: 6000 },
       { rank: 2, name: 'alice', title: 'Rookie', tag: 'veteran', color: 'gold', score: 5000 },
-      { rank: 3, name: 'carol', title: 'Old Timer', tag: '', color: '', score: 4000 },
+      { rank: 3, name: 'carol', title: 'Hard Hitter', tag: '', color: '', score: 4000 },
     ],
     mine: { score: 5000, rank: 2 },
   },
@@ -84,6 +88,7 @@ export const EXPECTED = {
   ],
   incoming: { from: 'alice', tag: 'veteran', color: 'gold' },
   bobSees: { title: 'Rookie', tag: 'veteran', color: 'gold' },
-  aliceSees: { title: 'Grinder', tag: '', color: 'aurora' },
+  aliceSees: { title: 'Centurion', tag: '', color: 'aurora' },
+  earned: { look: { title: 'Centurion', tag: 'top1', color: '' }, set: ['top1'] },
   afterDelete: { deleted: 200, keys: [null, null], othersKept: [JSON.stringify({ title: 'Rookie', tag: 'veteran', color: 'gold' })] },
 };
